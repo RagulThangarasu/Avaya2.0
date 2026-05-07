@@ -1,0 +1,60 @@
+{
+  "name": "avayaa-2.0",
+  "version": "1.0.0",
+  "description": "Playwright Testing Automation Framework for AEM",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui",
+    "test:debug": "npx playwright test --debug",
+    "test:auth": "npx playwright test tests/auth/",
+    "test:ditamap": "npx playwright test tests/ditamap/",
+    "test:content": "npx playwright test tests/content-validation/content.spec.ts",
+    "test:deep-compare": "npx playwright test tests/content-validation/deep-content.spec.ts",
+    "test:content-parity": "npx playwright test tests/content-validation/content-parity.spec.ts --reporter=list",
+    "test:pdf-validation": "npx playwright test tests/content-validation/pdf-validation.spec.ts --reporter=list",
+    "test:content-validation": "npx playwright test tests/content-validation/content-validation.spec.ts",
+    "test:extract-stage": "npx playwright test tests/content-validation/extract-stage-topics.spec.ts",
+    "test:leftnav": "npx playwright test tests/leftnav-validation/",
+    "test:taxonomy": "npx playwright test tests/taxonomy-validation/",
+    "test:setup-only": "npx playwright test --project=setup",
+    "validate:metadata": "ts-node scripts/validate-metadata.ts",
+    "report": "npx playwright show-report reports/html",
+    "clean:sessions": "rm -rf auth-sessions",
+    "clean:reports": "rm -rf reports test-results",
+    "clean": "npm run clean:sessions && npm run clean:reports",
+    "server": "npx tsx scripts/server.ts"
+  },
+  "keywords": [
+    "playwright",
+    "testing",
+    "aem",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.3.5",
+    "dotenv": "^17.3.1",
+    "playwright": "^1.58.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "csv-parse": "^6.2.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "jspdf": "^4.2.0",
+    "jspdf-autotable": "^5.0.7",
+    "multer": "^2.1.1",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5",
+    "xmldom": "^0.6.0",
+    "xpath": "^0.0.34"
+  }
+}

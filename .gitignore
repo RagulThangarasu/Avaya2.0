@@ -1,0 +1,8 @@
+node_modules/
+dist/
+auth-sessions/
+reports/
+test-results/
+.env
+*.png
+*.mp4

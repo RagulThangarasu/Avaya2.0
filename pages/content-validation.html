@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Parity Validation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #1F4E78, #2980b9); color: white; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .header-left h1 { font-size: 24px; margin-bottom: 5px; }
+    .header-left p { opacity: 0.8; font-size: 14px; }
+    .aem-status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 50px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; border: 2px solid transparent; transition: all 0.4s ease; white-space: nowrap; }
+    .aem-status-badge.connected { background: rgba(39, 174, 96, 0.2); border-color: #2ecc71; color: #2ecc71; box-shadow: 0 0 12px rgba(46,204,113,0.3); }
+    .aem-status-badge.disconnected { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #ff7675; box-shadow: 0 0 12px rgba(231,76,60,0.3); }
+    .aem-status-badge .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .aem-status-badge.connected .dot { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; animation: pulse-green 2s infinite; }
+    .aem-status-badge.disconnected .dot { background: #e74c3c; box-shadow: 0 0 6px #e74c3c; }
+    .aem-status-badge .badge-text { line-height: 1.3; }
+    .aem-status-badge .badge-title { display: block; font-size: 13px; }
+    .aem-status-badge .badge-sub { display: block; font-size: 10px; opacity: 0.8; font-weight: 400; }
+    @keyframes pulse-green { 0%,100% { box-shadow: 0 0 4px #2ecc71; } 50% { box-shadow: 0 0 10px #2ecc71; } }
+    .nav { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 10px 40px; display: flex; gap: 20px; }
+    .nav a { text-decoration: none; color: #1F4E78; font-weight: 500; padding: 8px 16px; border-radius: 6px; transition: background 0.2s; }
+    .nav a:hover { background: #e8f0fe; }
+    .nav a.active { background: #1F4E78; color: white; }
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 30px; margin-bottom: 20px; }
+    .card h2 { color: #1F4E78; margin-bottom: 20px; font-size: 20px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 14px; }
+    .form-group input { width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
+    .form-group input:focus { outline: none; border-color: #2980b9; }
+    .form-group .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #1F4E78; color: white; }
+    .btn-primary:hover { background: #16384f; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(31,78,120,0.3); }
+    .btn-primary:disabled { background: #999; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-secondary { background: #e8f0fe; color: #1F4E78; margin-left: 10px; }
+    .btn-secondary:hover { background: #d0e2fc; }
+    .actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .status { margin-top: 20px; padding: 16px; border-radius: 8px; display: none; }
+    .status.running { display: block; background: #fff3cd; border: 1px solid #ffc107; color: #856404; }
+    .status.success { display: block; background: #d4edda; border: 1px solid #28a745; color: #155724; }
+    .status.error { display: block; background: #f8d7da; border: 1px solid #dc3545; color: #721c24; }
+    .status .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #856404; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .log-container { margin-top: 20px; display: none; }
+    .log-container.visible { display: block; }
+    .log-container h3 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .log { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 13px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .info-box { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .info-box h3 { color: #004085; font-size: 14px; margin-bottom: 8px; }
+    .info-box ul { margin-left: 20px; color: #004085; font-size: 13px; line-height: 1.8; }
+    
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+    
+    .card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); padding: 25px; margin-bottom: 20px; border: 1px solid #edf2f7; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px; }
+    .card-header h2 { font-size: 18px; color: #1F4E78; margin: 0; }
+    
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .report-card { border-left: 5px solid #27ae60; }
+    .log-card { border-left: 5px solid #1F4E78; }
+    .report-link { 
+        display: none; 
+        margin-top: 25px; 
+        padding: 20px; 
+        background: #fff; 
+        border: 2px solid #27ae60; 
+        border-radius: 12px; 
+        box-shadow: 0 4px 15px rgba(39, 174, 96, 0.1);
+        animation: slideIn 0.5s ease-out;
+    }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .report-link a, .report-link button { transition: opacity 0.2s; }
+    .report-link a:hover, .report-link button:hover:not(:disabled) { opacity: 0.85; }
+    .report-link button:disabled { opacity: 0.6; cursor: not-allowed !important; }
+    #reportTable th { background: #1F4E78; color: white; padding: 10px; text-align: left; position: sticky; top: 0; border: 1px solid #ddd; }
+    #reportTable td { padding: 10px; border: 1px solid #ddd; word-break: break-word; min-width: 120px; }
+    #reportTable tr:nth-child(even) { background: #f9f9f9; }
+    .sheet-tab { padding: 8px 16px; border-radius: 20px; background: #eee; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+    .sheet-tab.active { background: #1F4E78; color: white; }
+    .sheet-tab:hover:not(.active) { background: #ddd; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>🔍 Content Parity Validation</h1>
+      <p>Compare Stage vs Production content — topics, headings, tables, text length, tags & versions</p>
+    </div>
+    <div class="aem-status-badge disconnected" id="aemStatusBadge">
+      <div class="dot"></div>
+      <div class="badge-text">
+        <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
+        <span class="badge-sub" id="aemStatusSub">Checking…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <a href="content-validation.html" class="active">Content Validation</a>
+    <a href="leftnav-validation.html">Left Nav Validation</a>
+    <a href="pdf-validation.html">PDF Validation</a>
+  </div>
+
+  <div class="container">
+    <div class="info-box">
+      <h3>ℹ️ What this validates:</h3>
+      <ul>
+        <li>Extracts all topics from the left navigation on both environments</li>
+        <li>Checks bidirectional parity — topics missing in Stage or Prod</li>
+        <li>Deep compares each matched topic: title, headings, paragraphs, tables, tags, versions, text length</li>
+        <li>Generates a color-coded Excel report at <code>reports/content-parity.xlsx</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Configure URLs</h2>
+      <div class="form-group">
+        <label for="stageUrl">Stage URL</label>
+        <input type="url" id="stageUrl" placeholder="https://author-p181473-e1910301.adobeaemcloud.com/content/aemsites/en-us/bundle/..." />
+        <div class="hint">AEM Author Stage URL with ?wcmmode=disabled</div>
+      </div>
+      <div class="form-group">
+        <label for="prodUrl">Production URL</label>
+        <input type="url" id="prodUrl" placeholder="https://documentation.avaya.com/bundle/.../page/..." />
+        <div class="hint">Public production documentation URL</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run Content Validation</button>
+        <button class="btn btn-secondary" id="stopBtn" onclick="stopValidation()" style="display:none;">⏹ Stop</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      <div class="report-link" id="reportLink">
+        <h3 style="margin-bottom:15px; color:#27ae60; display:flex; align-items:center; gap:8px; font-size: 16px;">
+          ✨ Reports Generated Successfully
+        </h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <a id="xlsxDownloadBtn" href="/api/download/content-parity.xlsx" download="content-parity.xlsx"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#1F4E78;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+            📊 Download Excel Report
+          </a>
+          <button id="pdfDownloadBtn" onclick="downloadPdf()"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#c0392b;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;">
+            📄 Download PDF Report
+          </button>
+          <button id="viewReportBtn" onclick="viewReport()"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#27ae60;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;">
+            👁️ View Online Report
+          </button>
+          <span id="pdfStatus" style="font-size:12px;color:#666;"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="reportViewerContainer" class="card" style="display:none; max-width: 100%; overflow-x: auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="margin-bottom:0;">📊 Online Report Viewer</h2>
+        <button onclick="closeReport()" style="background:none; border:none; color:#e74c3c; cursor:pointer; font-weight:bold; font-size: 16px;">Close ✖</button>
+      </div>
+      <div id="sheetTabs" style="display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:10px; flex-wrap:wrap;"></div>
+      <div id="reportTableContainer" style="overflow-x:auto; max-height: 600px;">
+        <table id="reportTable"></table>
+      </div>
+    </div>
+
+    <div class="log-container" id="logContainer">
+      <h3>📋 Live Output</h3>
+      <div class="log" id="logOutput"></div>
+    </div>
+  </div>
+
+  <script>
+    // ── AEM Status ──────────────────────────────────────────
+    function updateAemStatus() {
+      fetch('/api/aem-status')
+        .then(r => r.json())
+        .then(data => {
+          const badge = document.getElementById('aemStatusBadge');
+          const title = document.getElementById('aemStatusTitle');
+          const sub   = document.getElementById('aemStatusSub');
+          if (data.connected) {
+            badge.className = 'aem-status-badge connected';
+            title.textContent = 'AEM Connected';
+            sub.textContent = data.username || '';
+          } else {
+            badge.className = 'aem-status-badge disconnected';
+            title.textContent = 'AEM Disconnected';
+            sub.textContent = data.reason || 'No active session';
+          }
+        })
+        .catch(() => {
+          document.getElementById('aemStatusTitle').textContent = 'AEM Disconnected';
+          document.getElementById('aemStatusSub').textContent = 'Server unreachable';
+        });
+    }
+    updateAemStatus();
+    function checkExistingReport() {
+      fetch('/api/reports')
+        .then(r => r.json())
+        .then(files => {
+          const reportExists = files.some(f => f.name === 'content-parity.xlsx');
+          if (reportExists) {
+            const reportLink = document.getElementById('reportLink');
+            reportLink.style.display = 'block';
+            reportLink.scrollIntoView({ behavior: 'smooth' });
+            // Also update the status to show a report is available
+            const status = document.getElementById('status');
+            if (status && !status.className.includes('running')) {
+              status.className = 'status success'; if(statusBadge){statusBadge.textContent='DONE'; statusBadge.style.background='#d4edda'; statusBadge.style.color='#155724';}
+              status.style.display = 'block';
+              status.innerHTML = '✅ A previous report is available for download.';
+            }
+          }
+        })
+        .catch(() => {});
+    }
+    // checkExistingReport();
+
+    setInterval(updateAemStatus, 10000);
+
+    // Load saved URLs
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('stageUrl').value = data.stage || '';
+        document.getElementById('prodUrl').value = data.production || '';
+      })
+      .catch(() => {});
+
+    let eventSource = null;
+    let currentJobId = null;
+
+    function runValidation() {
+      const stageUrl = document.getElementById('stageUrl').value.trim();
+      const prodUrl = document.getElementById('prodUrl').value.trim();
+
+      if (!stageUrl || !prodUrl) {
+        alert('Please enter both Stage and Production URLs');
+        return;
+      }
+
+      // Save URLs and start test
+      const status = document.getElementById('status');
+      const logContainer = document.getElementById('logContainer');
+      const logOutput = document.getElementById('logOutput');
+      const runBtn = document.getElementById('runBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const reportLink = document.getElementById('reportLink');
+
+      runBtn.disabled = true;
+      stopBtn.style.display = 'inline-block';
+      reportLink.style.display = 'none';
+      logContainer.classList.add('visible');
+      logOutput.textContent = '';
+      status.className = 'status running';
+      const statusBadge = document.getElementById('statusBadge');
+      if (statusBadge) {
+          statusBadge.textContent = 'RUNNING';
+          statusBadge.style.background = '#fff3cd';
+          statusBadge.style.color = '#856404';
+      }
+
+      status.innerHTML = '<span class="spinner"></span> Running content parity validation… This may take 2-4 minutes.';
+
+      fetch('/api/run/content-parity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: stageUrl, production: prodUrl })
+      }).then(r => r.json()).then(data => {
+        if (data.error) {
+          status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
+          status.textContent = '❌ ' + data.error;
+          runBtn.disabled = false;
+          stopBtn.style.display = 'none';
+          return;
+        }
+        currentJobId = data.jobId;
+        // Start streaming logs
+        eventSource = new EventSource('/api/logs/' + data.jobId);
+        eventSource.onmessage = function(e) {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'log') {
+            logOutput.textContent += msg.data + '\n';
+            logOutput.scrollTop = logOutput.scrollHeight;
+          } else if (msg.type === 'done') {
+            status.className = 'status success'; if(statusBadge){statusBadge.textContent='DONE'; statusBadge.style.background='#d4edda'; statusBadge.style.color='#155724';}
+            status.textContent = '✅ Validation complete! ' + (msg.summary || '');
+            
+            // Update download link
+            if (msg.reportFile) {
+              const downloadBtn = document.getElementById('xlsxDownloadBtn');
+              downloadBtn.href = '/api/download/' + msg.reportFile;
+              downloadBtn.download = msg.reportFile;
+            }
+            
+            reportLink.style.display = 'block';
+            reportLink.scrollIntoView({ behavior: 'smooth' });
+            runBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            eventSource.close();
+          } else if (msg.type === 'error') {
+            status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
+            status.textContent = '❌ ' + msg.data;
+            runBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            eventSource.close();
+          }
+        };
+        eventSource.onerror = function() {
+          if (status.className.includes('running')) {
+            status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
+            status.textContent = '❌ Connection lost. Check terminal for results.';
+          }
+          runBtn.disabled = false;
+          stopBtn.style.display = 'none';
+          eventSource.close();
+        };
+      }).catch(err => {
+        status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
+        status.textContent = '❌ Failed to start: ' + err.message;
+        runBtn.disabled = false;
+        stopBtn.style.display = 'none';
+      });
+    }
+
+    function stopValidation() {
+      if (eventSource) eventSource.close();
+      fetch('/api/stop', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: currentJobId })
+      });
+      document.getElementById('status').className = 'status error';
+      document.getElementById('status').textContent = '⏹ Validation stopped by user.';
+      document.getElementById('runBtn').disabled = false;
+      document.getElementById('stopBtn').style.display = 'none';
+    }
+
+    function downloadPdf() {
+      const btn = document.getElementById('pdfDownloadBtn');
+      const statusEl = document.getElementById('pdfStatus');
+      btn.disabled = true;
+      btn.textContent = '⏳ Generating PDF...';
+      statusEl.textContent = 'This may take 10-30 seconds...';
+
+      fetch('/api/generate-pdf/content-parity')
+        .then(r => {
+          if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Failed'); });
+          return r.blob();
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'content-parity.pdf';
+          a.click();
+          URL.revokeObjectURL(url);
+          btn.disabled = false;
+          btn.innerHTML = '📄 Download PDF Report';
+          statusEl.textContent = '✅ PDF downloaded!';
+          setTimeout(() => statusEl.textContent = '', 3000);
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.innerHTML = '📄 Download PDF Report';
+          statusEl.textContent = '❌ ' + err.message;
+        });
+    }
+
+    let reportData = null;
+
+    function viewReport() {
+      const btn = document.getElementById('viewReportBtn');
+      const container = document.getElementById('reportViewerContainer');
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Loading Data...';
+
+      fetch('/api/report-data/content-parity')
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) throw new Error(data.error);
+          reportData = data;
+          renderReport();
+          container.style.display = 'block';
+          container.scrollIntoView({ behavior: 'smooth' });
+          btn.disabled = false;
+          btn.innerHTML = '👁️ View Online Report';
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.innerHTML = '👁️ View Online Report';
+          alert('Error loading report: ' + err.message);
+        });
+    }
+
+    function renderReport(sheetIndex = 0) {
+      if (!reportData || !reportData.sheets) return;
+      
+      const sheetTabs = document.getElementById('sheetTabs');
+      const table = document.getElementById('reportTable');
+      
+      // Render Tabs
+      sheetTabs.innerHTML = '';
+      reportData.sheets.forEach((sheet, idx) => {
+        const tab = document.createElement('div');
+        tab.className = 'sheet-tab' + (idx === sheetIndex ? ' active' : '');
+        tab.textContent = sheet.name;
+        tab.onclick = () => renderReport(idx);
+        sheetTabs.appendChild(tab);
+      });
+      
+      // Render Table
+      table.innerHTML = '';
+      const rows = reportData.sheets[sheetIndex].rows;
+      if (!rows || rows.length === 0) {
+        table.innerHTML = '<tr><td style="text-align:center; padding:40px;">No data in this sheet</td></tr>';
+        return;
+      }
+      
+      rows.forEach((rowData, rIdx) => {
+        const tr = document.createElement('tr');
+        rowData.forEach(cellValue => {
+          const cell = document.createElement(rIdx === 0 ? 'th' : 'td');
+          cell.textContent = cellValue === null || cellValue === undefined ? '' : cellValue;
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      });
+    }
+
+    function closeReport() {
+      document.getElementById('reportViewerContainer').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
