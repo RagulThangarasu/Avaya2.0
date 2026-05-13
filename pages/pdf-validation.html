@@ -355,25 +355,13 @@
   </div>
 
   <script>
-    // -- API Base Detection & Persistent Settings --
-    let API_BASE = localStorage.getItem('backend_api_url') || (window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '');
-    
-    document.getElementById('backendSettingsBtn').onclick = () => {
-      document.getElementById('apiBaseInput').value = API_BASE || 'http://localhost:3000';
-      document.getElementById('settingsModal').style.display = 'flex';
-    };
-    function closeSettingsModal() { document.getElementById('settingsModal').style.display = 'none'; }
-    function saveSettings() {
-      const val = document.getElementById('apiBaseInput').value.trim();
-      if (val) {
-        API_BASE = val.endsWith('/') ? val.slice(0, -1) : val;
-        localStorage.setItem('backend_api_url', API_BASE);
-      } else {
-        localStorage.removeItem('backend_api_url');
-        API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
-      }
-      location.reload();
+    // ── GitHub Pages → Localhost Auto-Redirect ──
+    if (window.location.hostname.includes('github.io')) {
+      const localUrl = 'http://localhost:3000/' + window.location.pathname.split('/').pop();
+      window.location.replace(localUrl);
     }
+
+    let API_BASE = '';
 
     // -- AEM Status --
     function updateAemStatus() {

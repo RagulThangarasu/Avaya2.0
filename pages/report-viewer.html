@@ -184,6 +184,12 @@
     </main>
 
     <script>
+        // ── GitHub Pages → Localhost Auto-Redirect ──
+        if (window.location.hostname.includes('github.io')) {
+          const localUrl = 'http://localhost:3000/' + window.location.pathname.split('/').pop() + window.location.search;
+          window.location.replace(localUrl);
+        }
+
         const params = new URLSearchParams(window.location.search);
         const reportType = params.get('type');
         const jobId = params.get('jobId');
