@@ -10,44 +10,32 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 import difflib
 
-# Configurations
+# ── CONFIGURATIONS ──
 REPORTS_DIR = os.path.join(os.getcwd(), 'reports')
 UI_REPORTS_DIR = os.path.join(os.getcwd(), '.ui_reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(UI_REPORTS_DIR, exist_ok=True)
 
-# Load URLs
-TEST_URLS_PATH = os.path.join(os.getcwd(), 'config', 'test-urls.json')
 AUTH_STATE_PATH = os.path.join(os.getcwd(), 'auth-sessions', 'storage-state.json')
+
+# Thresholds for "Tester" perspective
+SIMILARITY_THRESHOLD = 95.0
+IMAGE_PARITY_REQUIRED = True
+TABLE_PARITY_REQUIRED = True
 
 STAGE_URL = os.environ.get('STAGE_URL')
 PROD_URL = os.environ.get('PROD_URL')
-REPORT_FILENAME = os.environ.get('REPORT_FILENAME') or os.path.join(UI_REPORTS_DIR, f'deep-content-validation-{int(datetime.now().timestamp())}.xlsx')
+REPORT_FILENAME = os.environ.get('REPORT_FILENAME') or os.path.join(UI_REPORTS_DIR, f'tester-content-report-{int(datetime.now().timestamp())}.xlsx')
 
-# Performance settings
-CONCURRENT_PAGES = 5  # Number of parallel page fetches
-MAX_TOPICS = 100      # Increased limit for faster validation
-
-if not STAGE_URL or not PROD_URL:
-    try:
-        with open(TEST_URLS_PATH, 'r') as f:
-            config = json.load(f)
-            STAGE_URL = STAGE_URL or config.get('stage')
-            PROD_URL = PROD_URL or config.get('production')
-    except: pass
-
-if not STAGE_URL or not PROD_URL:
-    print("❌ Error: Missing URLs.")
-    sys.exit(1)
+CONCURRENT_PAGES = 5
+MAX_TOPICS = 150  # Increased for comprehensive testing
 
 def get_filename(url):
     if not url: return ""
     path = urlparse(url).path
     filename = path.split('/')[-1] if '/' in path else path
-    # Remove extensions and common separator/noise characters for better matching
-    name = filename.split('.')[0] # Remove .html etc
-    name = name.lower().replace('-', '').replace('_', '').replace(' ', '')
-    return name
+    name = filename.split('.')[0]
+    return name.lower().replace('-', '').replace('_', '').replace(' ', '')
 
 async def handle_cookies(page):
     try:
@@ -60,74 +48,78 @@ async def handle_cookies(page):
         }''')
     except: pass
 
-async def get_page_metrics(browser_context, url, semaphore):
+async def get_page_data(browser_context, url, semaphore):
     async with semaphore:
         page = await browser_context.new_page()
-        # Optimization: Block unnecessary resources for metrics
+        # Block non-content assets
         await page.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2,ttf}", lambda route: route.abort())
         
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(1500)
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(2000)
             
             content = await page.content()
             soup = BeautifulSoup(content, 'html.parser')
             
-            for tag in soup(['nav', 'footer', 'script', 'style', 'header', 'aside']):
-                tag.decompose()
+            # ── NOISE STRIPPING (The "Tester" Way) ──
+            # Remove global UI elements that skew similarity
+            for noise in soup.select('nav, footer, script, style, header, aside, .breadcrumbs, .search-results, .feedback-section, .zDocsToolbar'):
+                noise.decompose()
                 
-            main_content = soup.find('main') or soup.find('article') or soup.find('div', class_='content') or soup.body
+            # Focus on the meat of the documentation
+            main = soup.find('main') or soup.find('article') or soup.find('div', class_='content') or soup.body
             
-            text = main_content.get_text(separator=' ', strip=True) if main_content else ""
-            images = len(main_content.find_all('img')) if main_content else 0
-            tables = len(main_content.find_all('table')) if main_content else 0
-            headings = len(main_content.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])) if main_content else 0
+            if not main:
+                return {'error': 'No content container found'}
+
+            # Extract metrics
+            text = main.get_text(separator=' ', strip=True)
+            images = [img.get('src') for img in main.find_all('img') if img.get('src')]
+            tables = len(main.find_all('table'))
+            
+            # Heading structure (Sequence matters for testers!)
+            headings = []
+            for h in main.find_all(['h1', 'h2', 'h3', 'h4']):
+                headings.append(f"{h.name}: {h.get_text().strip()}")
             
             return {
                 'text': text,
-                'images': images,
-                'tables': tables,
+                'image_count': len(images),
+                'table_count': tables,
                 'headings': headings,
                 'url': url
             }
         except Exception as e:
-            print(f"   ⚠️ Error {url}: {str(e)[:50]}...")
-            return None
+            return {'error': str(e)}
         finally:
             await page.close()
 
 async def extract_prod_toc(page, base_url):
-    print(f"   [TOC] Scanning Prod: {base_url}")
+    print(f"🔍 [PROD SCAN] Accessing source of truth: {base_url}")
     await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     
-    # Expand TOC
+    # Expand All topics
     try:
         await page.evaluate('''() => {
             const btns = document.querySelectorAll('.zDocsCollapseExpandButton');
             if (btns.length > 0) btns[0].click();
         }''')
-        print("   [TOC] Expanding virtualized navigation...")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(4000)
     except: pass
 
-    # Scroll and Collect for Virtualized TOC
-    toc_links = await page.evaluate('''async () => {
-        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
+    # Scroll and Collect (Handle virtualization)
+    links = await page.evaluate('''async () => {
+        const container = document.querySelector('ul.zDocsTocList') || document.body;
         const seen = new Set();
         const results = [];
         let lastHeight = 0, scrollCount = 0;
-        
-        while (scrollCount < 60) {
+        while (scrollCount < 50) {
             container.querySelectorAll('a[href]').forEach(a => {
-                const text = a.innerText.trim();
-                const href = a.getAttribute('href');
-                if (href && text && text.length > 1 && !href.startsWith('#') && !href.startsWith('javascript')) {
-                    const full = new URL(href, window.location.href).href.split('#')[0].split('?')[0];
-                    if (!seen.has(full)) {
-                        seen.add(full);
-                        results.push({text, href});
-                    }
+                const href = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
+                if (href && !seen.has(href) && !href.startsWith('javascript')) {
+                    seen.add(href);
+                    results.push({text: a.innerText.trim(), url: href});
                 }
             });
             container.scrollTop += 800;
@@ -138,137 +130,117 @@ async def extract_prod_toc(page, base_url):
         }
         return results;
     }''')
-    
-    toc = []
-    seen = set()
-    for item in toc_links:
-        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if url not in seen:
-            toc.append({'title': item['text'], 'url': url})
-            seen.add(url)
-    print(f"   ✅ Prod TOC: {len(toc)} topics found.")
-    return toc
+    print(f"✅ Found {len(links)} topics on Production.")
+    return links
 
 async def extract_stage_toc(page, base_url):
-    print(f"   [TOC] Scanning Stage: {base_url}")
+    print(f"🔍 [STAGE SCAN] Accessing staging environment...")
     await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     await page.wait_for_timeout(2000)
     
-    links_data = await page.evaluate('''() => {
+    links = await page.evaluate('''() => {
         const results = [];
         document.querySelectorAll('.cmp-navigation__item-link').forEach(a => {
-            const text = a.innerText.trim();
-            const href = a.getAttribute('href');
-            if (href && text) results.push({text, href});
+            const url = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
+            results.push({text: a.innerText.trim(), url: url});
         });
         return results;
     }''')
-    
-    toc = []
-    seen = set()
-    for item in links_data:
-        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if url not in seen and '.html' in url:
-            toc.append({'title': item['text'], 'url': url})
-            seen.add(url)
-    print(f"   ✅ Stage TOC: {len(toc)} topics found.")
-    return toc
+    print(f"✅ Found {len(links)} topics on Stage.")
+    return links
 
-async def run_deep_validation():
+async def run_tester_validation():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        stage_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
-        prod_ctx = await browser.new_context()
+        s_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
+        p_ctx = await browser.new_context()
 
-        print("🔍 Extracting TOCs...")
-        t1 = await stage_ctx.new_page()
-        t2 = await prod_ctx.new_page()
-        
-        stage_toc_task = extract_stage_toc(t1, STAGE_URL)
-        prod_toc_task = extract_prod_toc(t2, PROD_URL)
-        
-        stage_toc, prod_toc = await asyncio.gather(stage_toc_task, prod_toc_task)
-        await t1.close()
-        await t2.close()
+        # Step 1: TOC Discovery
+        p1, p2 = await s_ctx.new_page(), await p_ctx.new_page()
+        s_toc_task = extract_stage_toc(p1, STAGE_URL)
+        p_toc_task = extract_prod_toc(p2, PROD_URL)
+        s_toc, p_toc = await asyncio.gather(s_toc_task, p_toc_task)
+        await p1.close(); await p2.close()
 
-        stage_by_fn = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
-        topics_to_check = []
-        # Use PROD as source of truth
-        for p_item in prod_toc:
+        # Step 2: Mapping (Source of Truth = Production)
+        s_map = {get_filename(t['url']): t for t in s_toc if get_filename(t['url'])}
+        work_list = []
+        for p_item in p_toc:
             fn = get_filename(p_item['url'])
-            if fn in stage_by_fn:
-                topics_to_check.append({
-                    'title': p_item['title'], 
-                    'prod_url': p_item['url'], 
-                    'stage_url': stage_by_fn[fn]['url']
-                })
+            work_list.append({
+                'title': p_item['title'] if 'title' in p_item else p_item.get('text'),
+                'prod_url': p_item['url'],
+                'stage_url': s_map.get(fn, {}).get('url')
+            })
 
-        print(f"🔗 Matched {len(topics_to_check)} topics by filename parity.")
-        topics_to_check = topics_to_check[:MAX_TOPICS]
+        work_list = work_list[:MAX_TOPICS]
+        print(f"📋 Starting deep content check for {len(work_list)} items...")
         
-        if not topics_to_check:
-            print("⚠️ No matching topics found between Stage and Prod.")
-            print(f"::RESULTS::{json.dumps({'overall': 0, 'images': 0, 'tables': 0})}")
-            await browser.close()
-            return
-
-        print(f"📋 Validating content for {len(topics_to_check)} matched topics...")
+        # Step 3: Deep Content Validation
         semaphore = asyncio.Semaphore(CONCURRENT_PAGES)
         
-        async def check_topic(topic):
-            p_task = get_page_metrics(prod_ctx, topic['prod_url'], semaphore)
-            s_task = get_page_metrics(stage_ctx, topic['stage_url'], semaphore)
-            p_m, s_m = await asyncio.gather(p_task, s_task)
+        async def test_topic(item):
+            if not item['stage_url']:
+                return {**item, 'Result': 'FAIL', 'Comment': 'Missing on Stage'}
             
-            if p_m and s_m:
-                sim = difflib.SequenceMatcher(None, p_m['text'], s_m['text']).ratio()
-                return {
-                    'Topic': topic['title'],
-                    'Text Similarity (%)': round(sim * 100, 2),
-                    'Prod Images': p_m['images'],
-                    'Stage Images': s_m['images'],
-                    'Images Parity': '✓ Match' if p_m['images'] == s_m['images'] else '✗ Mismatch',
-                    'Prod Tables': p_m['tables'],
-                    'Stage Tables': s_m['tables'],
-                    'Tables Parity': '✓ Match' if p_m['tables'] == s_m['tables'] else '✗ Mismatch',
-                    'Prod Headings': p_m['headings'],
-                    'Stage Headings': s_m['headings'],
-                    'Prod URL': topic['prod_url'],
-                    'Stage URL': topic['stage_url']
-                }
-            return {'Topic': topic['title'], 'Status': 'Error'}
+            p_data = await get_page_data(p_ctx, item['prod_url'], semaphore)
+            s_data = await get_page_data(s_ctx, item['stage_url'], semaphore)
+            
+            if 'error' in p_data or 'error' in s_data:
+                return {**item, 'Result': 'ERROR', 'Comment': f"Fetch failed: {p_data.get('error') or s_data.get('error')}"}
 
-        results = await asyncio.gather(*(check_topic(t) for t in topics_to_check))
-        deep_results = [r for r in results if r and r.get('Status') != 'Error']
+            # Similarity
+            sim = round(difflib.SequenceMatcher(None, p_data['text'], s_data['text']).ratio() * 100, 2)
+            
+            # Heading Structure
+            h_match = "YES" if p_data['headings'] == s_data['headings'] else "NO"
+            
+            # Tester Decision
+            is_pass = (sim >= SIMILARITY_THRESHOLD and 
+                       p_data['image_count'] == s_data['image_count'] and 
+                       p_data['table_count'] == s_data['table_count'])
+            
+            return {
+                'Topic': item['title'],
+                'Result': 'PASS' if is_pass else 'FAIL',
+                'Similarity %': sim,
+                'Image Parity': '✓' if p_data['image_count'] == s_data['image_count'] else f"{p_data['image_count']} vs {s_data['image_count']}",
+                'Table Parity': '✓' if p_data['table_count'] == s_data['table_count'] else f"{p_data['table_count']} vs {s_data['table_count']}",
+                'Heading Match': h_match,
+                'Prod URL': item['prod_url'],
+                'Stage URL': item['stage_url']
+            }
 
-        if not deep_results:
-            print("⚠️ No deep validation results were generated.")
-            print(f"::RESULTS::{json.dumps({'overall': 0, 'images': 0, 'tables': 0})}")
-            await browser.close()
-            return
+        tasks = [test_topic(it) for it in work_list]
+        raw_results = await asyncio.gather(*tasks)
+        final_results = [r for r in raw_results if r]
 
-        df = pd.DataFrame(deep_results)
-        avg_sim = df['Text Similarity (%)'].mean()
-        img_match_pct = (len(df[df['Images Parity'] == '✓ Match']) / len(df) * 100)
-        tbl_match_pct = (len(df[df['Tables Parity'] == '✓ Match']) / len(df) * 100)
+        # Step 4: Report Generation
+        df = pd.DataFrame(final_results)
         
-        summary = [
-            ['Deep Content Validation Report'],
-            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            ['Topics Matched', len(deep_results)],
-            ['Avg Similarity', f"{round(avg_sim, 2)}%"],
-            ['Img Match %', f"{round(img_match_pct, 2)}%"],
-            ['Tbl Match %', f"{round(tbl_match_pct, 2)}%"],
-        ]
+        passed = len(df[df['Result'] == 'PASS'])
+        total = len(df)
+        score = int(passed/total*100) if total else 0
+        
+        # Calculate individual metrics for UI
+        avg_sim = df['Similarity %'].mean() if 'Similarity %' in df.columns else 0
+        img_match_count = len(df[df['Image Parity'] == '✓'])
+        tbl_match_count = len(df[df['Table Parity'] == '✓'])
         
         with pd.ExcelWriter(REPORT_FILENAME) as writer:
-            pd.DataFrame(summary).to_excel(writer, sheet_name='Summary', header=False, index=False)
-            df.to_excel(writer, sheet_name='Comparison', index=False)
+            pd.DataFrame([
+                ['Tester Quality Report'],
+                ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+                ['Overall Quality Score', f"{score}%"],
+                ['Total Topics Validated', total],
+                ['Passed Topics', passed]
+            ]).to_excel(writer, sheet_name='Summary', header=False, index=False)
+            df.to_excel(writer, sheet_name='Detailed Validation', index=False)
 
-        print(f"::RESULTS::{json.dumps({'overall': int(avg_sim), 'images': int(img_match_pct), 'tables': int(tbl_match_pct)})}")
-        print(f"✅ Fast validation complete. Report: {REPORT_FILENAME}")
+        print(f"::RESULTS::{json.dumps({'overall': int(avg_sim), 'images': int(img_match_count/total*100), 'tables': int(tbl_match_count/total*100)})}")
+        print(f"✅ Tester validation complete. Report saved: {REPORT_FILENAME}")
         await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_deep_validation())
+    asyncio.run(run_tester_validation())

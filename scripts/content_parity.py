@@ -60,6 +60,7 @@ async def extract_prod_toc(page, base_url):
     await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     
+    # Expand all
     try:
         await page.evaluate('''() => {
             const btns = document.querySelectorAll('.zDocsCollapseExpandButton');
@@ -68,22 +69,18 @@ async def extract_prod_toc(page, base_url):
         await page.wait_for_timeout(3000)
     except: pass
 
-    toc_links = await page.evaluate('''async () => {
-        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
+    # Scroll-and-Collect for Virtualized TOC
+    links = await page.evaluate('''async () => {
+        const container = document.querySelector('ul.zDocsTocList') || document.body;
         const seen = new Set();
         const results = [];
         let lastHeight = 0, scrollCount = 0;
-        
         while (scrollCount < 60) {
             container.querySelectorAll('a[href]').forEach(a => {
-                const text = a.innerText.trim();
-                const href = a.getAttribute('href');
-                if (href && text && text.length > 1 && !href.startsWith('#') && !href.startsWith('javascript')) {
-                    const full = new URL(href, window.location.href).href.split('#')[0].split('?')[0];
-                    if (!seen.has(full)) {
-                        seen.add(full);
-                        results.push({text, href});
-                    }
+                const href = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
+                if (href && !seen.has(href) && !href.startsWith('javascript')) {
+                    seen.add(href);
+                    results.push({text: a.innerText.trim(), url: href});
                 }
             });
             container.scrollTop += 800;
@@ -94,54 +91,32 @@ async def extract_prod_toc(page, base_url):
         }
         return results;
     }''')
-    
-    toc = []
-    seen = set()
-    for item in toc_links:
-        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if url not in seen:
-            toc.append({'title': item['text'], 'url': url})
-            seen.add(url)
-    return toc
+    return [{'title': l['text'], 'url': l['url']} for l in links]
 
 async def extract_stage_toc(page, base_url):
     await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     await page.wait_for_timeout(2000)
     
-    links_data = await page.evaluate('''() => {
+    links = await page.evaluate('''() => {
         const results = [];
         document.querySelectorAll('.cmp-navigation__item-link').forEach(a => {
-            const text = a.innerText.trim();
-            const href = a.getAttribute('href');
-            if (href && text) results.push({text, href});
+            const url = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
+            results.push({text: a.innerText.trim(), url: url});
         });
         return results;
     }''')
-    
-    toc = []
-    seen = set()
-    for item in links_data:
-        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if url not in seen and '.html' in url:
-            toc.append({'title': item['text'], 'url': url})
-            seen.add(url)
-    return toc
+    return [{'title': l['text'], 'url': l['url']} for l in links]
 
 async def run_validation():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        stage_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
-        prod_ctx = await browser.new_context()
+        s_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
+        p_ctx = await browser.new_context()
 
-        p1 = await stage_ctx.new_page()
-        p2 = await prod_ctx.new_page()
-        
+        p1, p2 = await s_ctx.new_page(), await p_ctx.new_page()
         print("🔍 Scanning Navigation Structure (Parallel)...")
-        stage_task = extract_stage_toc(p1, STAGE_URL)
-        prod_task = extract_prod_toc(p2, PROD_URL)
-        
-        stage_toc, prod_toc = await asyncio.gather(stage_task, prod_task)
+        stage_toc, prod_toc = await asyncio.gather(extract_stage_toc(p1, STAGE_URL), extract_prod_toc(p2, PROD_URL))
         await browser.close()
 
         print(f"📊 Comparing: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
@@ -151,19 +126,17 @@ async def run_validation():
             print(f"::RESULTS::{json.dumps({'overall': 0, 'content': 0})}")
             return
 
-        stage_by_fn = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
+        s_map = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
         comparison = []
 
         for i, p_item in enumerate(prod_toc):
             fn = get_filename(p_item['url'])
-            matched_s = stage_by_fn.get(fn)
+            matched_s = s_map.get(fn)
             
             match = "NO"
             if matched_s:
-                if slugify(p_item['title']) == slugify(matched_s['title']):
-                    match = "YES"
-                else:
-                    match = "FILENAME_MATCH"
+                if slugify(p_item['title']) == slugify(matched_s['title']): match = "YES"
+                else: match = "FILENAME_MATCH"
 
             comparison.append({
                 'Order': i + 1,
