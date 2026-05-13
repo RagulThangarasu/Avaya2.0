@@ -18,6 +18,14 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 
 const app = express();
+
+// Python Path Detection
+const getPythonPath = () => {
+  const venvPath = path.join(__dirname, '../.venv/bin/python');
+  if (fs.existsSync(venvPath)) return venvPath;
+  return 'python3';
+};
+const PYTHON_PATH = getPythonPath();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 const ROOT = path.resolve(__dirname, '..');
@@ -199,7 +207,7 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
   const reportPath = path.join(UI_REPORTS_DIR, reportFile);
 
   const job = startTest('content-parity', [
-    'python3', '-u', 'scripts/content_parity.py'
+    PYTHON_PATH, '-u', 'scripts/content_parity.py'
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
@@ -224,7 +232,7 @@ app.post('/api/run/deep-content-validation', (req: any, res: any) => {
   const reportPath = path.join(UI_REPORTS_DIR, reportFile);
 
   const job = startTest('deep-content', [
-    'python3', '-u', 'scripts/deep_content_validation.py'
+    PYTHON_PATH, '-u', 'scripts/deep_content_validation.py'
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,

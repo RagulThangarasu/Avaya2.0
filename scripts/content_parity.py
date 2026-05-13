@@ -28,249 +28,171 @@ if not STAGE_URL or not PROD_URL:
             config = json.load(f)
             STAGE_URL = STAGE_URL or config.get('stage')
             PROD_URL = PROD_URL or config.get('production')
-    except:
-        pass
+    except: pass
 
 if not STAGE_URL or not PROD_URL:
-    print("❌ Error: Missing STAGE_URL or PROD_URL.")
+    print("❌ Error: Missing URLs.")
     sys.exit(1)
-
-print(f"🚀 Starting Content Parity Validation")
-print(f"   Published (Stage): {STAGE_URL}")
-print(f"   Prod:              {PROD_URL}")
 
 def slugify(t):
     if not t: return ""
     return re.sub(r'[^a-z0-9]', '', t.lower())
 
 def get_filename(url):
+    if not url: return ""
     path = urlparse(url).path
     filename = path.split('/')[-1] if '/' in path else path
-    return filename.replace('.html', '').replace('.htm', '').lower().replace('-', '').replace('_', '')
+    name = filename.split('.')[0]
+    return name.lower().replace('-', '').replace('_', '').replace(' ', '')
 
 async def handle_cookies(page):
     try:
-        for sel in ['#onetrust-accept-btn-handler', '#btn-accept-all', 'button:has-text("Accept")', '.cookie-accept']:
-            if await page.locator(sel).is_visible(timeout=1500):
-                await page.click(sel)
-                await page.wait_for_timeout(500)
-                break
-    except:
-        pass
-
-# ── Prod TOC Extraction ──────────────────────────────────────────────
-async def extract_prod_toc(page, base_url):
-    """Extract TOC from Production (documentation.avaya.com)."""
-    await page.wait_for_load_state("networkidle")
-    await handle_cookies(page)
-
-    try:
-        expand_btn = page.locator('.zDocsCollapseExpandButton').first
-        if await expand_btn.is_visible(timeout=5000):
-            await expand_btn.click()
-            await page.wait_for_timeout(5000)
-        
-        expand_icons = await page.locator('.zDocsTocCollapseItemButton, .expand-icon, button[aria-expanded="false"]').all()
-        for icon in expand_icons[:100]:
-            try:
-                await icon.click(timeout=300)
-            except: pass
-        await page.wait_for_timeout(3000)
-    except:
-        pass
-
-    links_data = await page.evaluate('''() => {
-        const results = [];
-        const container = document.querySelector('.zDocsTocList') || document.querySelector('.zDocsTOC');
-        let allLinks = [];
-        if (container) {
-            allLinks = Array.from(container.querySelectorAll('a[href]'));
-        }
-        if (allLinks.length === 0) {
-            allLinks = Array.from(document.querySelectorAll('nav a[href], [class*="sidebar"] a[href]'));
-        }
-        allLinks.forEach(a => {
-            const href = a.getAttribute('href');
-            const text = a.innerText.trim();
-            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
-                results.push({text, href});
+        await page.evaluate('''() => {
+            const sels = ['#onetrust-accept-btn-handler', '#btn-accept-all', 'button:has-text("Accept")', '.cookie-accept'];
+            for (const s of sels) {
+                const b = document.querySelector(s);
+                if (b) b.click();
             }
-        });
+        }''')
+    except: pass
+
+async def extract_prod_toc(page, base_url):
+    await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+    await handle_cookies(page)
+    
+    try:
+        await page.evaluate('''() => {
+            const btns = document.querySelectorAll('.zDocsCollapseExpandButton');
+            if (btns.length > 0) btns[0].click();
+        }''')
+        await page.wait_for_timeout(3000)
+    except: pass
+
+    toc_links = await page.evaluate('''async () => {
+        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
+        const seen = new Set();
+        const results = [];
+        let lastHeight = 0, scrollCount = 0;
+        
+        while (scrollCount < 60) {
+            container.querySelectorAll('a[href]').forEach(a => {
+                const text = a.innerText.trim();
+                const href = a.getAttribute('href');
+                if (href && text && text.length > 1 && !href.startsWith('#') && !href.startsWith('javascript')) {
+                    const full = new URL(href, window.location.href).href.split('#')[0].split('?')[0];
+                    if (!seen.has(full)) {
+                        seen.add(full);
+                        results.push({text, href});
+                    }
+                }
+            });
+            container.scrollTop += 800;
+            await new Promise(r => setTimeout(r, 400));
+            if (container.scrollTop === lastHeight) break;
+            lastHeight = container.scrollTop;
+            scrollCount++;
+        }
         return results;
     }''')
-
+    
     toc = []
     seen = set()
-    for item in links_data:
-        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if full_url not in seen:
-            toc.append({'title': item['text'], 'url': full_url})
-            seen.add(full_url)
-
-    print(f"   ✅ Prod TOC: {len(toc)} topics found.")
+    for item in toc_links:
+        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
+        if url not in seen:
+            toc.append({'title': item['text'], 'url': url})
+            seen.add(url)
     return toc
 
-# ── Stage/Published TOC Extraction ───────────────────────────────────
 async def extract_stage_toc(page, base_url):
-    """Extract TOC from Published/Stage (AEM publish)."""
-    await page.wait_for_load_state("networkidle")
+    await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     await page.wait_for_timeout(2000)
-
+    
     links_data = await page.evaluate('''() => {
         const results = [];
-        const links = document.querySelectorAll('.cmp-navigation__item-link');
-        links.forEach(a => {
-            const href = a.getAttribute('href');
+        document.querySelectorAll('.cmp-navigation__item-link').forEach(a => {
             const text = a.innerText.trim();
-            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
-                results.push({text, href});
-            }
+            const href = a.getAttribute('href');
+            if (href && text) results.push({text, href});
         });
         return results;
     }''')
-
+    
     toc = []
     seen = set()
     for item in links_data:
-        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if full_url not in seen and '.html' in full_url:
-            toc.append({'title': item['text'], 'url': full_url})
-            seen.add(full_url)
-
-    print(f"   ✅ Stage TOC: {len(toc)} topics found.")
+        url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
+        if url not in seen and '.html' in url:
+            toc.append({'title': item['text'], 'url': url})
+            seen.add(url)
     return toc
 
-# ── Main Validation ──────────────────────────────────────────────────
 async def run_validation():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-
-        stage_ctx = await browser.new_context(
-            storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None
-        )
+        stage_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
         prod_ctx = await browser.new_context()
 
-        # ── Step 1: Extract TOCs ──────────────────────────────────────
-        print("🔍 Scanning Navigation Structure...")
+        p1 = await stage_ctx.new_page()
+        p2 = await prod_ctx.new_page()
+        
+        print("🔍 Scanning Navigation Structure (Parallel)...")
+        stage_task = extract_stage_toc(p1, STAGE_URL)
+        prod_task = extract_prod_toc(p2, PROD_URL)
+        
+        stage_toc, prod_toc = await asyncio.gather(stage_task, prod_task)
+        await browser.close()
 
-        p_page = await prod_ctx.new_page()
-        await p_page.goto(PROD_URL, wait_until="networkidle", timeout=60000)
-        prod_toc = await extract_prod_toc(p_page, PROD_URL)
-        await p_page.close()
+        print(f"📊 Comparing: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
 
-        s_page = await stage_ctx.new_page()
-        print(f"🌐 Opening Published URL for TOC...")
-        await s_page.goto(STAGE_URL, wait_until="networkidle", timeout=60000)
-        stage_toc = await extract_stage_toc(s_page, STAGE_URL)
-        await s_page.close()
+        if not prod_toc:
+            print("⚠️ Production TOC is empty.")
+            print(f"::RESULTS::{json.dumps({'overall': 0, 'content': 0})}")
+            return
 
-        # ── Step 2: Build TOC Comparison Report ───────────────────────
-        print(f"📊 Comparing TOC Structure: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
+        stage_by_fn = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
+        comparison = []
 
-        stage_by_filename = {}
-        for item in stage_toc:
-            fn = get_filename(item['url'])
-            if fn:
-                stage_by_filename[fn] = item
-
-        toc_comparison = []
-        max_len = max(len(prod_toc), len(stage_toc), 1)
-
-        for i in range(max_len):
-            prod_item = prod_toc[i] if i < len(prod_toc) else None
-            stage_item = stage_toc[i] if i < len(stage_toc) else None
-
-            match_status = "NO"
-            matched_stage = stage_item
-
-            if prod_item and stage_item:
-                if slugify(prod_item['title']) == slugify(stage_item['title']):
-                    match_status = "YES"
+        for i, p_item in enumerate(prod_toc):
+            fn = get_filename(p_item['url'])
+            matched_s = stage_by_fn.get(fn)
+            
+            match = "NO"
+            if matched_s:
+                if slugify(p_item['title']) == slugify(matched_s['title']):
+                    match = "YES"
                 else:
-                    prod_fn = get_filename(prod_item['url'])
-                    if prod_fn in stage_by_filename:
-                        matched_stage = stage_by_filename[prod_fn]
-                        match_status = "FILENAME_MATCH"
+                    match = "FILENAME_MATCH"
 
-            prod_fn = get_filename(prod_item['url']) if prod_item else ''
-            pub_fn = get_filename(matched_stage['url']) if matched_stage else ''
-            if prod_item and matched_stage and prod_fn and pub_fn:
-                url_status = '✓ Match' if prod_fn == pub_fn else '✗ Mismatch'
-            else:
-                url_status = 'N/A'
-
-            toc_comparison.append({
+            comparison.append({
                 'Order': i + 1,
-                'Prod Topic': prod_item['title'] if prod_item else '[MISSING IN PROD]',
-                'Published Topic': matched_stage['title'] if matched_stage else '[MISSING IN PUBLISHED]',
-                'Match': match_status,
-                'Prod URL': prod_item['url'] if prod_item else 'N/A',
-                'Published URL': matched_stage['url'] if matched_stage else 'N/A',
-                'URL Status': url_status
+                'Prod Topic': p_item['title'],
+                'Stage Topic': matched_s['title'] if matched_s else '[MISSING]',
+                'Match': match,
+                'Prod URL': p_item['url'],
+                'Stage URL': matched_s['url'] if matched_s else 'N/A'
             })
 
-        matched_count = len([c for c in toc_comparison if c['Match'] in ('YES', 'FILENAME_MATCH')])
-        url_match_count = len([c for c in toc_comparison if c['URL Status'] == '✓ Match'])
-        url_mismatch_count = len([c for c in toc_comparison if c['URL Status'] == '✗ Mismatch'])
-        total = len(toc_comparison)
-        print(f"   ✅ Structure Match: {matched_count}/{total} ({int(matched_count/total*100) if total else 0}%)")
-        print(f"   🔗 URL Match: {url_match_count}/{total} | Mismatch: {url_mismatch_count}")
+        df = pd.DataFrame(comparison)
+        matched_count = len(df[df['Match'].isin(['YES', 'FILENAME_MATCH'])])
+        total = len(df)
+        pct = int(matched_count/total*100) if total else 0
 
-        # ── Step 3: Generate Report ───────────────────────────────────
-        toc_df = pd.DataFrame(toc_comparison)
-
-        summary_data = [
-            ['Content Parity – TOC Structure Report'],
-            [''],
-            ['Run Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            ['Prod URL', PROD_URL],
-            ['Published URL', STAGE_URL],
-            [''],
-            ['── TOC Structure Summary ──'],
-            ['Prod Topics Found', len(prod_toc)],
-            ['Published Topics Found', len(stage_toc)],
-            ['Sequence Matches (YES)', len([c for c in toc_comparison if c['Match'] == 'YES'])],
-            ['Filename Matches', len([c for c in toc_comparison if c['Match'] == 'FILENAME_MATCH'])],
-            ['Mismatches', len([c for c in toc_comparison if c['Match'] == 'NO'])],
-            ['Match Percentage', f"{int(matched_count/total*100) if total else 0}%"],
-            [''],
-            ['URL Match Count', url_match_count],
-            ['URL Mismatch Count', url_mismatch_count],
+        summary = [
+            ['Content Parity Summary'],
+            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Prod Topics', len(prod_toc)],
+            ['Stage Topics', len(stage_toc)],
+            ['Match Percentage', f"{pct}%"]
         ]
+        
+        with pd.ExcelWriter(REPORT_FILENAME) as writer:
+            pd.DataFrame(summary).to_excel(writer, sheet_name='Summary', header=False, index=False)
+            df.to_excel(writer, sheet_name='TOC Parity', index=False)
 
-        prod_only = []
-        for item in prod_toc:
-            fn = get_filename(item['url'])
-            if fn not in stage_by_filename:
-                prod_only.append({'Topic': item['title'], 'Prod URL': item['url']})
-
-        prod_filenames = {get_filename(t['url']) for t in prod_toc}
-        stage_only = []
-        for item in stage_toc:
-            fn = get_filename(item['url'])
-            if fn not in prod_filenames:
-                stage_only.append({'Topic': item['title'], 'Published URL': item['url']})
-
-        with pd.ExcelWriter(REPORT_FILENAME, engine='openpyxl') as writer:
-            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', header=False, index=False)
-            toc_df.to_excel(writer, sheet_name='TOC Structure', index=False)
-            if prod_only:
-                pd.DataFrame(prod_only).to_excel(writer, sheet_name='Only in Prod', index=False)
-            if stage_only:
-                pd.DataFrame(stage_only).to_excel(writer, sheet_name='Only in Published', index=False)
-
-        overall_pct = int(matched_count / total * 100) if total else 0
-        results = {
-            'overall': overall_pct,
-            'headings': 100,
-            'tables': 100,
-            'images': 100,
-            'content': overall_pct,
-        }
-        print(f"::RESULTS::{json.dumps(results)}")
-        print(f"✅ Report saved: {REPORT_FILENAME}")
-        await browser.close()
+        print(f"::RESULTS::{json.dumps({'overall': pct, 'content': pct})}")
+        print(f"✅ TOC Validation complete: {REPORT_FILENAME}")
 
 if __name__ == "__main__":
     asyncio.run(run_validation())
