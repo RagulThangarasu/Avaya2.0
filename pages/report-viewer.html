@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Viewer | Avaya Validation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #da291c;
+            --primary-dark: #b02117;
+            --bg: #f4f7f6;
+            --card-bg: #ffffff;
+            --text: #232527;
+            --text-light: #666;
+            --border: #e0e0e0;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --danger: #e74c3c;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+        header {
+            background: #232527;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .logo { font-weight: 700; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+        .logo i { color: var(--primary); }
+
+        .controls { display: flex; gap: 15px; align-items: center; }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-outline { border: 1px solid rgba(255,255,255,0.3); color: white; background: transparent; }
+        .btn-outline:hover { background: rgba(255,255,255,0.1); }
+
+        main { padding: 2rem; max-width: 1600px; margin: 0 auto; }
+
+        .report-header { margin-bottom: 2rem; }
+        .report-header h1 { font-size: 1.8rem; margin-bottom: 5px; }
+        .report-header p { color: var(--text-light); }
+
+        .tabs { display: flex; gap: 5px; margin-bottom: 1px; }
+        .tab {
+            padding: 10px 20px;
+            background: #e0e0e0;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-light);
+        }
+        .tab.active { background: var(--card-bg); color: var(--primary); border-bottom: 3px solid var(--primary); }
+
+        .table-container {
+            background: var(--card-bg);
+            border-radius: 0 8px 8px 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: auto;
+            max-height: 80vh;
+            border: 1px solid var(--border);
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        th {
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-light);
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        td {
+            padding: 10px 15px;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border);
+            max-width: 400px;
+            word-break: break-word;
+        }
+        tr:hover { background: #fdfdfd; }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 60vh;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .error-msg {
+            color: var(--danger);
+            background: #fdf2f2;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #fbd5d5;
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        /* Excel-like color highlighting */
+        .cell-warn { background-color: #fff3cd !important; }
+        .cell-danger { background-color: #f8d7da !important; color: #721c24; }
+        .cell-success { background-color: #d4edda !important; color: #155724; }
+
+        /* Extra path segment highlight */
+        .path-extra {
+            background: #ffe0b2;
+            color: #e65100;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-weight: 600;
+            border: 1px solid #ffb74d;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <i>⚡</i> Avaya Report Viewer
+        </div>
+        <div class="controls">
+            <button class="btn btn-outline" onclick="refreshReport()">🔄 Refresh</button>
+            <button class="btn btn-primary" id="downloadBtn">📊 Download Excel</button>
+            <a href="/" class="btn btn-outline">🏠 Dashboard</a>
+        </div>
+    </header>
+
+    <main>
+        <div id="loader" class="loading">
+            <div class="spinner"></div>
+            <p>Loading report data...</p>
+        </div>
+
+        <div id="error" class="error-msg" style="display:none"></div>
+
+        <div id="reportContent" style="display:none">
+            <div class="report-header">
+                <h1 id="reportTitle">Report Title</h1>
+                <p id="reportMeta">Generated at 2024-05-11 16:07</p>
+            </div>
+
+            <div class="tabs" id="sheetTabs"></div>
+            <div class="table-container">
+                <table id="reportTable"></table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const reportType = params.get('type');
+        const jobId = params.get('jobId');
+        const reportNameMap = {
+            'content-parity': 'Content Parity Report',
+            'leftnav': 'Left Nav TOC Validation',
+            'pdf-validation': 'PDF Parity Validation',
+            'metadata-validation': 'Metadata Validation',
+            'broken-links': 'Broken Links & Assets Validation'
+        };
+
+        if (!reportType) {
+            showError('Invalid report type. Please return to the dashboard.');
+        } else {
+            fetchData();
+        }
+
+        async function fetchData() {
+            try {
+                const url = jobId ? `/api/report-data/${reportType}?jobId=${jobId}` : `/api/report-data/${reportType}`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                renderReport(data);
+            } catch (err) {
+                showError('Failed to connect to server: ' + err.message);
+            }
+        }
+
+        function renderReport(data) {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('reportContent').style.display = 'block';
+            document.getElementById('reportTitle').textContent = reportNameMap[reportType] || 'Validation Report';
+            document.getElementById('reportMeta').textContent = `Generated: ${new Date().toLocaleString()}`;
+            
+            document.getElementById('downloadBtn').onclick = () => {
+                let downloadFilename = reportType + '-report.xlsx';
+                if (reportType === 'pdf-validation') downloadFilename = 'pdf-validation-report.xlsx';
+                
+                // If we have a specific jobId, we should ideally download that one
+                // But the API currently fallbacks to latest if file not found
+                window.location.href = `/api/download/${downloadFilename}`;
+            };
+
+            const tabContainer = document.getElementById('sheetTabs');
+            tabContainer.innerHTML = '';
+            
+            data.sheets.forEach((sheet, idx) => {
+                const tab = document.createElement('div');
+                tab.className = `tab ${idx === 0 ? 'active' : ''}`;
+                tab.textContent = sheet.name;
+                tab.onclick = () => {
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    renderSheet(sheet);
+                };
+                tabContainer.appendChild(tab);
+            });
+
+            if (data.sheets.length > 0) {
+                renderSheet(data.sheets[0]);
+            }
+        }
+
+        /**
+         * Extract path segments from a URL string.
+         * e.g. 'https://docs.avaya.com/bundle/foo/bar/page.html'
+         *  -> ['bundle','foo','bar','page.html']
+         */
+        function getPathSegments(url) {
+            try {
+                const path = new URL(url).pathname;
+                return path.split('/').filter(Boolean);
+            } catch {
+                return url.split('/').filter(Boolean);
+            }
+        }
+
+        /**
+         * Compare Prod URL path vs Published URL path.
+         * Returns the Prod URL rendered as HTML with extra segments highlighted.
+         */
+        function highlightExtraSegments(prodUrl, pubUrl) {
+            if (!prodUrl || !pubUrl || prodUrl === 'N/A' || pubUrl === 'N/A') return null;
+
+            const prodSegs = getPathSegments(prodUrl);
+            const pubSegs = new Set(getPathSegments(pubUrl).map(s => s.toLowerCase().replace(/\.html?$/, '').replace(/[-_]/g, '')));
+
+            // Check if prod has any segment NOT present in published
+            let hasExtra = false;
+            const parts = [];
+            prodSegs.forEach(seg => {
+                const norm = seg.toLowerCase().replace(/\.html?$/, '').replace(/[-_]/g, '');
+                if (!pubSegs.has(norm)) {
+                    parts.push(`<span class="path-extra">${seg}</span>`);
+                    hasExtra = true;
+                } else {
+                    parts.push(seg);
+                }
+            });
+
+            if (!hasExtra) return null; // no extras, render normally
+
+            // Rebuild the URL with highlighted segments in the path
+            try {
+                const u = new URL(prodUrl);
+                return u.origin + '/' + parts.join('/');
+            } catch {
+                return '/' + parts.join('/');
+            }
+        }
+
+        function renderSheet(sheet) {
+            const table = document.getElementById('reportTable');
+            table.innerHTML = '';
+
+            // Detect column indices from header row
+            let prodUrlCol = -1, pubUrlCol = -1;
+            if (sheet.rows.length > 0) {
+                sheet.rows[0].forEach((h, i) => {
+                    const header = String(h || '').trim().toLowerCase();
+                    if (header === 'prod url') prodUrlCol = i;
+                    if (header === 'published url') pubUrlCol = i;
+                });
+            }
+
+            sheet.rows.forEach((row, rIdx) => {
+                const tr = document.createElement('tr');
+                row.forEach((cell, cIdx) => {
+                    const tag = rIdx === 0 ? 'th' : 'td';
+                    const el = document.createElement(tag);
+
+                    // For data rows: highlight extra path segments in Prod URL
+                    let usedHtml = false;
+                    if (rIdx > 0 && cIdx === prodUrlCol && pubUrlCol >= 0) {
+                        const pubCell = row[pubUrlCol];
+                        const highlighted = highlightExtraSegments(cell, pubCell);
+                        if (highlighted) {
+                            el.innerHTML = highlighted;
+                            usedHtml = true;
+                        }
+                    }
+
+                    if (!usedHtml) {
+                        el.textContent = cell || '';
+                    }
+                    
+                    // Simple highlighting logic
+                    const val = String(cell || '').toLowerCase();
+                    if (val.includes('fail') || val.includes('critical') || val.includes('missing') || val.includes('✗')) el.className = 'cell-danger';
+                    if (val.includes('warn') || val.includes('major')) el.className = 'cell-warn';
+                    if (val.includes('pass') || val.includes('ok') || val.includes('✓') || val === 'yes' || val === 'filename_match') el.className = 'cell-success';
+                    
+                    tr.appendChild(el);
+                });
+                table.appendChild(tr);
+            });
+        }
+
+        function showError(msg) {
+            document.getElementById('loader').style.display = 'none';
+            const errEl = document.getElementById('error');
+            errEl.textContent = msg;
+            errEl.style.display = 'block';
+        }
+
+        function refreshReport() {
+            document.getElementById('reportContent').style.display = 'none';
+            document.getElementById('loader').style.display = 'flex';
+            fetchData();
+        }
+    </script>
+</body>
+</html>

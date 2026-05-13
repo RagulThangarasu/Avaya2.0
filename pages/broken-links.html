@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Broken Links Validation | Avaya Validation Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
+    .header { background: #232527; color: white; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 4px solid #da291c; }
+    .header-left h1 { font-size: 24px; margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
+    .header-left p { opacity: 0.8; font-size: 14px; }
+    .aem-status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 50px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; border: 2px solid transparent; transition: all 0.4s ease; white-space: nowrap; cursor: pointer; }
+    .aem-status-badge.connected { background: rgba(39, 174, 96, 0.2); border-color: #2ecc71; color: #2ecc71; box-shadow: 0 0 12px rgba(46,204,113,0.3); }
+    .aem-status-badge.disconnected { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #ff7675; box-shadow: 0 0 12px rgba(231,76,60,0.3); }
+    .aem-status-badge .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .aem-status-badge.connected .dot { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; animation: pulse-green 2s infinite; }
+    .aem-status-badge.disconnected .dot { background: #e74c3c; box-shadow: 0 0 6px #e74c3c; }
+    @keyframes pulse-green { 0%,100% { box-shadow: 0 0 4px #2ecc71; } 50% { box-shadow: 0 0 10px #2ecc71; } }
+    
+    .nav { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 10px 40px; display: flex; gap: 20px; }
+    .nav a { text-decoration: none; color: #4a4a4a; font-weight: 500; padding: 8px 16px; border-radius: 6px; transition: all 0.2s; border: 1px solid transparent; }
+    .nav a:hover { background: #fdedec; color: #da291c; }
+    .nav a.active { background: #da291c; color: white; border-color: #da291c; }
+    
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); padding: 25px; margin-bottom: 20px; border: 1px solid #edf2f7; border-top: 3px solid transparent; transition: border-color 0.3s; }
+    .card:hover { border-top-color: #da291c; }
+    .card h2 { color: #232527; margin-bottom: 20px; font-size: 20px; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }
+    
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 14px; }
+    .form-group input { width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
+    .form-group input:focus { outline: none; border-color: #da291c; box-shadow: 0 0 0 3px rgba(218, 41, 28, 0.1); }
+    
+    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #da291c; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #b32015; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(218, 41, 28, 0.3); }
+    .btn-primary:disabled { background: #999; cursor: not-allowed; }
+    
+    .status { margin-top: 20px; padding: 16px; border-radius: 8px; display: none; }
+    .status.running { display: block; background: #fff3cd; border: 1px solid #ffc107; color: #856404; }
+    .status.success { display: block; background: #d4edda; border: 1px solid #28a745; color: #155724; }
+    .status.error { display: block; background: #f8d7da; border: 1px solid #dc3545; color: #721c24; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #856404; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .log-container { margin-top: 20px; display: none; }
+    .log-container.visible { display: block; }
+    .log { background: #232527; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 13px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; border-left: 4px solid #da291c; }
+    
+    .report-link { display: none; margin-top: 25px; padding: 20px; background: #fff; border: 2px solid #27ae60; border-radius: 12px; box-shadow: 0 4px 15px rgba(39, 174, 96, 0.1); animation: slideIn 0.5s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>🔗 Broken Links Validation</h1>
+      <p>Crawl topics and validate all internal/external links for 404s</p>
+    </div>
+    <div class="aem-status-badge disconnected" id="aemStatusBadge">
+      <div class="dot"></div>
+      <div class="badge-text">
+        <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <a href="content-validation.html">Content Validation</a>
+    <a href="pdf-validation.html">PDF Validation</a>
+    <a href="broken-links.html" class="active">Broken Links</a>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Configure Crawl</h2>
+      <div class="form-group">
+        <label for="crawlUrl">Start URL (Landing page with TOC)</label>
+        <input type="url" id="crawlUrl" placeholder="https://documentation.avaya.com/bundle/..." />
+        <div style="font-size:12px; color:#888; margin-top:6px;">The crawler will visit the landing page, extract all topics from the navigation, and scan each topic for broken links.</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run Broken Link Crawler</button>
+        <button class="btn" id="stopBtn" onclick="stopValidation()" style="display:none; background:#ff7675; color:white; margin-left:10px;">⏹ Stop Validation</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      
+      <div class="report-link" id="reportLink">
+        <h3 style="margin-bottom:15px; color:#27ae60; display:flex; align-items:center; gap:8px;">
+          ✨ Validation Complete
+        </h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <a id="xlsxDownloadBtn" href="#" download
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#232527;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.15);">
+              📊 Download Excel Report
+          </a>
+          <button onclick="window.open('report-viewer.html?type=broken-links', '_blank')"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#4a4a4a;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+            👁️ View Online Report
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="log-container" id="logContainer">
+      <h3 style="font-size:14px; color:#666; margin-bottom:8px;">📋 Live Crawl Output</h3>
+      <div class="log" id="logOutput">Waiting for crawl to start...</div>
+    </div>
+  </div>
+
+  <script>
+    // AEM Status
+    function updateAemStatus() {
+      fetch('/api/aem-status')
+        .then(r => r.json())
+        .then(data => {
+          const badge = document.getElementById('aemStatusBadge');
+          const title = document.getElementById('aemStatusTitle');
+          if (data.connected) {
+            badge.className = 'aem-status-badge connected';
+            title.textContent = 'AEM Connected';
+          } else {
+            badge.className = 'aem-status-badge disconnected';
+            title.textContent = 'AEM Disconnected';
+          }
+        }).catch(() => {});
+    }
+    updateAemStatus();
+    setInterval(updateAemStatus, 15000);
+
+    // URL field remains empty by default as requested
+
+    let currentJobId = null;
+    let eventSource = null;
+
+    function runValidation() {
+      const url = document.getElementById('crawlUrl').value.trim();
+      if (!url) { alert('Please enter a URL'); return; }
+
+      const runBtn = document.getElementById('runBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const status = document.getElementById('status');
+      const logContainer = document.getElementById('logContainer');
+      const logOutput = document.getElementById('logOutput');
+      const reportLink = document.getElementById('reportLink');
+
+      runBtn.disabled = true;
+      stopBtn.style.display = 'inline-block';
+      reportLink.style.display = 'none';
+      logContainer.classList.add('visible');
+      logOutput.textContent = 'Starting crawl...\n';
+      status.className = 'status running';
+      status.innerHTML = '<span class="spinner"></span> Crawling topics and checking links... This may take several minutes depending on the bundle size.';
+
+      fetch('/api/run/broken-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      }).then(r => r.json()).then(data => {
+        if (data.error) {
+          status.className = 'status error';
+          status.textContent = '❌ ' + data.error;
+          runBtn.disabled = false;
+          stopBtn.style.display = 'none';
+          return;
+        }
+
+        currentJobId = data.jobId;
+        eventSource = new EventSource('/api/logs/' + data.jobId);
+        eventSource.onmessage = function(e) {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'log') {
+            logOutput.textContent += msg.data + '\n';
+            logOutput.scrollTop = logOutput.scrollHeight;
+          } else if (msg.type === 'done') {
+            status.className = 'status success';
+            status.textContent = '✅ Crawl complete! Broken links identified.';
+            document.getElementById('xlsxDownloadBtn').href = '/api/download/' + msg.reportFile;
+            reportLink.style.display = 'block';
+            runBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            eventSource.close();
+            
+            // Auto-download after a small delay to ensure file is flushed
+            setTimeout(() => {
+              const a = document.createElement('a');
+              a.href = '/api/download/' + msg.reportFile;
+              a.download = msg.reportFile;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }, 1000);
+          } else if (msg.type === 'error') {
+            status.className = 'status error';
+            status.textContent = '❌ ' + msg.data;
+            runBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            eventSource.close();
+          }
+        };
+      }).catch(err => {
+        status.className = 'status error';
+        status.textContent = '❌ Failed to start crawl: ' + err.message;
+        runBtn.disabled = false;
+        stopBtn.style.display = 'none';
+      });
+    }
+
+    function stopValidation() {
+      if (!currentJobId) return;
+      if (!confirm('Are you sure you want to stop the link crawler?')) return;
+
+      const stopBtn = document.getElementById('stopBtn');
+      stopBtn.disabled = true;
+      stopBtn.textContent = 'Stopping...';
+
+      fetch('/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: currentJobId })
+      }).then(() => {
+        if (eventSource) eventSource.close();
+        document.getElementById('status').className = 'status error';
+        document.getElementById('status').textContent = '⏹ Crawler stopped by user.';
+        document.getElementById('runBtn').disabled = false;
+        stopBtn.style.display = 'none';
+        stopBtn.disabled = false;
+        stopBtn.textContent = '⏹ Stop Validation';
+      }).catch(err => {
+        alert('Error stopping: ' + err.message);
+        stopBtn.disabled = false;
+        stopBtn.textContent = '⏹ Stop Validation';
+      });
+    }
+  </script>
+</body>
+</html>

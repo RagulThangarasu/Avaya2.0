@@ -6,3 +6,8 @@ test-results/
 .env
 *.png
 *.mp4
+.ui_reports/
+.temp_csv/
+PDF/
+.venv/
+scratch/

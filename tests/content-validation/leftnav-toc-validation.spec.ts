@@ -43,11 +43,16 @@ if (!testUrls.stage || !testUrls.production) {
 }
 
 function deriveBase(url: string) {
-  const parsed = new URL(url);
-  const isStage = parsed.hostname.includes('adobeaemcloud.com');
-  const bundleMatch = url.match(/\/bundle\/([^/]+)\//);
-  const bundle = bundleMatch ? bundleMatch[1] : '';
-  return { origin: parsed.origin, bundle, isStage };
+  if (!url) return { origin: '', bundle: '', isStage: false };
+  try {
+    const parsed = new URL(url);
+    const isStage = parsed.hostname.includes('adobeaemcloud.com');
+    const bundleMatch = url.match(/\/bundle\/([^/]+)\//);
+    const bundle = bundleMatch ? bundleMatch[1] : '';
+    return { origin: parsed.origin, bundle, isStage };
+  } catch (e) {
+    return { origin: '', bundle: '', isStage: false };
+  }
 }
 
 const stageInfo = deriveBase(testUrls.stage);
@@ -65,7 +70,7 @@ interface TocNode {
 
 interface TocIssue {
   type: 'missing_in_prod' | 'missing_in_stage' | 'extra_in_prod' | 'extra_in_stage'
-      | 'out_of_order' | 'case_mismatch' | 'symbol_mismatch';
+      | 'out_of_order' | 'case_mismatch' | 'symbol_mismatch' | 'grouping_mismatch';
   severity: 'high' | 'medium' | 'low';
   stageIndex: number | null;
   prodIndex: number | null;
@@ -77,9 +82,36 @@ interface TocIssue {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function isAuthWall(page: Page): Promise<boolean> {
-  const txt = await page.evaluate(() => document.body?.innerText ?? '');
-  return /sign in|log in|adobe experience manager.*welcome|authentication required/i.test(txt)
-    && !/zDocsTOC|leftnav|sidebar|toc-list/i.test(await page.content());
+  const url = page.url();
+  // If we've landed on a login-specific domain, it's definitely an auth wall
+  if (url.includes('adobelogin') || url.includes('ims-na1') || url.includes('auth.services.adobe.com')) {
+    return true;
+  }
+
+  try {
+    // Wait for the page to at least start loading
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    
+    const content = await page.content().catch(() => '');
+    
+    // CRITICAL: If we see ANY documentation navigation or AEM components, we are LOGGED IN.
+    // Skip login entirely in this case.
+    if (/zDocsTOC|leftnav|sidebar|toc-list|cmp-navigation|cmp-navigation__item/i.test(content)) {
+      console.log('   [Auth] Content navigation detected — session is active.');
+      return false;
+    }
+
+    const txt = await page.innerText('body').catch(() => '');
+    if (!txt) return false;
+    
+    // Check for explicit login prompts
+    const isLoginPrompt = /sign in to your account|log in to aem|adobe experience manager.*welcome|authentication required/i.test(txt.toLowerCase());
+    
+    return isLoginPrompt;
+  } catch (e) {
+    // If context is destroyed or other error, assume it might be a redirect to login
+    return url.includes('author-') || url.includes('adobeaemcloud');
+  }
 }
 
 async function autoLogin(browser: Browser): Promise<{ ctx: any; page: Page }> {
@@ -98,20 +130,49 @@ async function autoLogin(browser: Browser): Promise<{ ctx: any; page: Page }> {
   return { ctx, page };
 }
 
+/** 
+ * Handles common popups on Avaya Prod (Cookie banner, Login prompt)
+ */
+async function handleProdPopups(page: Page) {
+  console.log('   [Prod] Checking for cookie banner/popups…');
+  // 1. OneTrust Cookie Banner
+  await page.click('#onetrust-accept-btn-handler', { timeout: 8000 }).catch(() => {});
+  
+  // 2. Escape any modal/login prompt
+  await page.keyboard.press('Escape');
+  
+  // 3. Try clicking close buttons
+  await page.click('.zDocsCloseButton, .modal-close, [aria-label="Close"]', { timeout: 3000 }).catch(() => {});
+  
+  // Wait for any animations
+  await page.waitForTimeout(1000);
+}
+
 /** Appends ?wcmmode=disabled to a URL if not already present. Only for Stage. */
 function appendWcmDisabled(urlStr: string, isStage: boolean): string {
-  if (!isStage || !urlStr || urlStr.includes('wcmmode=disabled')) return urlStr;
-  try {
-    if (urlStr.startsWith('/') || !urlStr.includes('://')) {
-        const [path, hash] = urlStr.split('#');
-        const separator = path.includes('?') ? '&' : '?';
-        return `${path}${separator}wcmmode=disabled${hash ? '#' + hash : ''}`;
+  if (!isStage || !urlStr) return urlStr;
+
+  let finalUrl = urlStr;
+  // If it's an AEM Editor URL, convert to content URL
+  if (finalUrl.includes('/editor.html/')) {
+    finalUrl = finalUrl.replace('/editor.html/', '/');
+  } else if (finalUrl.includes('/ui#/aem/editor.html')) {
+    // Handle the complex AEM UI hash URLs
+    const match = finalUrl.match(/\/editor\.html(.+)$/);
+    if (match) {
+        const origin = new URL(finalUrl).origin;
+        finalUrl = origin + match[1];
     }
-    const url = new URL(urlStr);
+  }
+
+  if (finalUrl.includes('wcmmode=disabled')) return finalUrl;
+  
+  try {
+    const url = new URL(finalUrl);
     url.searchParams.set('wcmmode', 'disabled');
     return url.toString();
   } catch (e) {
-    const [path, hash] = urlStr.split('#');
+    const [path, hash] = finalUrl.split('#');
     const separator = path.includes('?') ? '&' : '?';
     return `${path}${separator}wcmmode=disabled${hash ? '#' + hash : ''}`;
   }
@@ -126,11 +187,12 @@ async function extractTocNodes(page: Page, bundle: string, isStage: boolean): Pr
     '[role="navigation"] a[href], [role="navigation"] span.cmp-navigation__item-title',
     'nav a[href], nav span.cmp-navigation__item-title',
   ] : [
-    `#topicToc_${bundle} a[href], #topicToc_${bundle} span.cmp-navigation__item-title`,         // User-specified ID
-    'nav.cmp-navigation a[href], nav.cmp-navigation span.cmp-navigation__item-title',
-    '.zDocsTOC a[href], .zDocsTOC span.cmp-navigation__item-title',
-    'nav a[href], nav span.cmp-navigation__item-title',
-    '[role="navigation"] a[href], [role="navigation"] span.cmp-navigation__item-title',
+    '.zDocsTOC a[href], .zDocsTOC span.zDocsTocItemTitle',                                     // Zoomin TOC (Prod)
+    '.zDocsTocList a[href]',
+    `#topicToc_${bundle} a[href]`,
+    'nav.cmp-navigation a[href]',
+    '.zDocsTOC a[href]',
+    'nav a[href]',
   ];
 
   const uiChromeKeywords = [
@@ -251,11 +313,26 @@ function compareTocs(stage: TocNode[], prod: TocNode[]): TocIssue[] {
   // Find items out of order (appear in different positions)
   for (let i = 0; i < stageSeq.length; i++) {
     const prodIdx = prodSeq.indexOf(stageSeq[i]);
-    if (prodIdx !== -1 && prodIdx !== i) {
+    if (prodIdx !== -1) {
       const sNode = stageMatched[i];
       const pNode = prodMatched[prodIdx];
-      issues.push({
-        type: 'out_of_order',
+
+      // Check for Grouping (Level/Nesting) mismatch
+      if (sNode.level !== pNode.level) {
+        issues.push({
+          type: 'grouping_mismatch',
+          severity: 'medium',
+          stageIndex: sNode.index,
+          prodIndex: pNode.index,
+          stageTitle: sNode.title,
+          prodTitle: pNode.title,
+          detail: `Grouping mismatch: "${sNode.title}" is at level ${sNode.level} in Stage but level ${pNode.level} in Prod`,
+        });
+      }
+
+      if (prodIdx !== i) {
+        issues.push({
+          type: 'out_of_order',
         severity: 'medium',
         stageIndex: sNode.index,
         prodIndex: pNode.index,
@@ -332,7 +409,7 @@ async function buildTocReport(
 ): Promise<string> {
   const wb = new ExcelJS.Workbook();
   const filename = process.env.REPORT_FILENAME || 'leftnav-toc-validation.xlsx';
-  const filePath = path.join(REPORTS_DIR, filename);
+  const filePath = path.isAbsolute(filename) ? filename : path.join(REPORTS_DIR, filename);
 
   // ─── Sheet 1: Summary ─────────────────────────────────────────────────
   const summarySheet = wb.addWorksheet('Summary');
@@ -495,38 +572,48 @@ test.describe('Left Nav TOC Validation – Stage vs Prod', () => {
     });
     let stagePage = await stageCtx.newPage();
 
-    console.log('\n📥 Navigating to Stage…');
-    await stagePage.goto(appendWcmDisabled(testUrls.stage, true), { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await stagePage.waitForTimeout(1500);
-
-    if (await isAuthWall(stagePage)) {
-      await stageCtx.close();
-      const fresh = await autoLogin(browser);
-      stageCtx = fresh.ctx;
-      stagePage = fresh.page;
+    if (testUrls.stage) {
+      console.log('\n📥 Navigating to Stage…');
       await stagePage.goto(appendWcmDisabled(testUrls.stage, true), { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await stagePage.waitForTimeout(1500);
+
+      if (await isAuthWall(stagePage)) {
+        await stageCtx.close();
+        const fresh = await autoLogin(browser);
+        stageCtx = fresh.ctx;
+        stagePage = fresh.page;
+        await stagePage.goto(appendWcmDisabled(testUrls.stage, true), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await stagePage.waitForTimeout(1500);
+      }
     }
 
-    // ─── Prod context (public) ─────────────────────────────────────────
+    // ─── Prod context (fresh/incognito) ─────────────────────────────────
     const prodCtx = await browser.newContext({ ignoreHTTPSErrors: true });
     const prodPage = await prodCtx.newPage();
 
-    console.log('📥 Navigating to Prod…');
-    await prodPage.goto(appendWcmDisabled(testUrls.production, false), { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await prodPage.waitForTimeout(1500);
+    if (testUrls.production) {
+      console.log('📥 Navigating to Prod…');
+      await prodPage.goto(appendWcmDisabled(testUrls.production, false), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await handleProdPopups(prodPage);
+      await prodPage.waitForTimeout(2000);
+    }
 
-    // ─── Extract TOC from both ─────────────────────────────────────────
-    console.log('\n🌳 Extracting Stage TOC (nav.cmp-navigation)…');
-    const stageToc = await extractTocNodes(stagePage, stageInfo.bundle, true);
-    console.log(`   Stage TOC: ${stageToc.length} nodes`);
+    let stageToc: TocNode[] = [];
+    if (testUrls.stage) {
+      console.log('\n🌳 Extracting Stage TOC (nav.cmp-navigation)…');
+      stageToc = await extractTocNodes(stagePage, stageInfo.bundle, true);
+      console.log(`   Stage TOC: ${stageToc.length} nodes`);
+    }
 
-    console.log('🌳 Extracting Prod TOC…');
-    let prodToc = await extractTocNodes(prodPage, prodInfo.bundle, false);
+    let prodToc: TocNode[] = [];
+    if (testUrls.production) {
+      console.log('🌳 Extracting Prod TOC…');
+      prodToc = await extractTocNodes(prodPage, prodInfo.bundle, false);
+    }
 
     // Prod site (documentation.avaya.com) doesn't have a visible TOC sidebar.
     // Construct Prod TOC from Stage topics and verify each URL responds with 200.
-    if (prodToc.length < 10 && stageToc.length > 0) {
+    if (testUrls.production && prodToc.length < 10 && stageToc.length > 0) {
       console.log('   ⚠  Prod has no visible TOC — constructing from Stage and verifying URLs…');
       prodToc = stageToc.map((st, i) => {
         // Derive Prod URL slug from Stage URL
@@ -580,6 +667,6 @@ test.describe('Left Nav TOC Validation – Stage vs Prod', () => {
     await prodCtx.close();
 
     expect(fs.existsSync(reportFile)).toBe(true);
-    expect(stageToc.length, 'Stage TOC should have nodes').toBeGreaterThan(0);
+    expect(stageToc.length + prodToc.length, 'At least one TOC should have nodes').toBeGreaterThan(0);
   });
 });

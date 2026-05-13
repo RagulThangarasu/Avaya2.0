@@ -62,7 +62,11 @@ interface Issue {
   prodContent: string;
   stageContent: string;
   description: string;
+  screenshotProd?: string;
+  screenshotStage?: string;
 }
+
+const SCREENSHOTS_DIR = path.join(REPORTS_DIR, 'screenshots');
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -160,21 +164,26 @@ async function parsePdf(buffer: Buffer, fileName: string): Promise<PdfContent> {
 
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i];
-    const isTableRow = /\S\s{3,}\S/.test(line) || line.includes('\t');
+    const isTableRow = /\S\s{2,}\S/.test(line) || line.includes('\t') || line.includes(' | ');
     if (isTableRow && line.trim()) {
       if (currentTable.length === 0) {
-        // Find which page this line belongs to
-        let charAccum = 0;
-        for (let p = 0; p < pages.length; p++) {
-          charAccum += pages[p].text.length;
-          if (i * 40 < charAccum) { 
-            tableStartPage = p + 1;
+        // Find which page this line belongs to accurately
+        for (const p of pages) {
+          if (p.lines.includes(line)) {
+            tableStartPage = p.pageNum;
             break;
           }
         }
       }
-      const cells = line.split(/\s{3,}|\t/).map((c: string) => c.trim()).filter((c: string) => c);
-      currentTable.push(cells);
+      const cells = line.split(/\s{2,}|\t| \| /).map((c: string) => c.trim()).filter((c: string) => c);
+      if (cells.length > 1) {
+        currentTable.push(cells);
+      } else {
+        // If it only has 1 cell after split, it's probably not a table row unless it's a continuation
+        if (currentTable.length > 0) {
+          currentTable.push(cells);
+        }
+      }
     } else {
       if (currentTable.length >= 2) {
         tables.push({
@@ -251,22 +260,27 @@ function comparePdfs(prod: PdfContent, stage: PdfContent): Issue[] {
     }
 
     let foundMatch = false;
-    const lookAhead = 150; // DEEP VALIDATION: Check up to 150 lines ahead to resync
+    const lookAhead = 200; // DEEP VALIDATION: Check up to 200 lines ahead to resync
 
     for (let i = 1; i < lookAhead && (sIdx + i) < stage.lines.length; i++) {
       if (stage.lines[sIdx + i].trim() === pNorm && pNorm !== '') {
-        const pageNum = getPageNum(stage, sIdx);
-        const topicName = getTopicAtLine(stage, sIdx);
-        issues.push({
-          category: 'Extra Content in Stage',
-          severity: 'Critical',
-          page: `Page ${pageNum}`,
-          lineNum: sIdx + 1,
-          prodContent: 'NOT IN PROD',
-          stageContent: `STAGE TOPIC: ${topicName} | ${stageLine.substring(0, 150)}`,
-          description: `❌ Extra content found in Stage (Page ${pageNum}) that does not exist in Prod.`,
-        });
-        sIdx++;
+        // We found Prod line in Stage ahead, so everything between sIdx and sIdx+i is EXTRA in Stage
+        for (let j = 0; j < i; j++) {
+          const currentStageLine = stage.lines[sIdx + j];
+          const pageNum = getPageNum(stage, sIdx + j);
+          const topicName = getTopicAtLine(stage, sIdx + j);
+          const contentType = identifyContentType(currentStageLine);
+          issues.push({
+            category: `Extra ${contentType} in Stage`,
+            severity: 'Critical',
+            page: `Page ${pageNum}`,
+            lineNum: sIdx + j + 1,
+            prodContent: 'NOT IN PROD',
+            stageContent: `STAGE TOPIC: ${topicName} | ${currentStageLine.substring(0, 150)}`,
+            description: `❌ EXTRA CONTENT: Found ${contentType.toLowerCase()} in Stage (Page ${pageNum}) that does not exist in Prod.`,
+          });
+        }
+        sIdx += i;
         foundMatch = true;
         break;
       }
@@ -275,18 +289,23 @@ function comparePdfs(prod: PdfContent, stage: PdfContent): Issue[] {
     if (!foundMatch) {
       for (let i = 1; i < lookAhead && (pIdx + i) < prod.lines.length; i++) {
         if (prod.lines[pIdx + i].trim() === sNorm && sNorm !== '') {
-          const pageNum = getPageNum(prod, pIdx);
-          const topicName = getTopicAtLine(prod, pIdx);
-          issues.push({
-            category: 'Missing Content in Stage',
-            severity: 'Critical',
-            page: `Page ${pageNum}`,
-            lineNum: pIdx + 1,
-            prodContent: `PROD TOPIC: ${topicName} | ${prodLine.substring(0, 150)}`,
-            stageContent: 'MISSING IN STAGE',
-            description: `❌ Content found in Prod (Page ${pageNum}) but is completely missing in Stage.`,
-          });
-          pIdx++;
+          // We found Stage line in Prod ahead, so everything between pIdx and pIdx+i is MISSING in Stage
+          for (let j = 0; j < i; j++) {
+            const currentProdLine = prod.lines[pIdx + j];
+            const pageNum = getPageNum(prod, pIdx + j);
+            const topicName = getTopicAtLine(prod, pIdx + j);
+            const contentType = identifyContentType(currentProdLine);
+            issues.push({
+              category: `Missing ${contentType} in Stage`,
+              severity: 'Critical',
+              page: `Page ${pageNum}`,
+              lineNum: pIdx + j + 1,
+              prodContent: `PROD TOPIC: ${topicName} | ${currentProdLine.substring(0, 150)}`,
+              stageContent: 'MISSING IN STAGE',
+              description: `❌ MISSING CONTENT: ${contentType} found in Prod (Page ${pageNum}) but is completely missing in Stage.`,
+            });
+          }
+          pIdx += i;
           foundMatch = true;
           break;
         }
@@ -294,16 +313,18 @@ function comparePdfs(prod: PdfContent, stage: PdfContent): Issue[] {
     }
 
     if (!foundMatch) {
-      const pageNum = getPageNum(prod, pIdx);
-      const topicName = getTopicAtLine(prod, pIdx);
+      const pageNum = pIdx < prod.lines.length ? getPageNum(prod, pIdx) : getPageNum(stage, sIdx);
+      const topicName = pIdx < prod.lines.length ? getTopicAtLine(prod, pIdx) : getTopicAtLine(stage, sIdx);
+      const contentType = pIdx < prod.lines.length ? identifyContentType(prodLine) : identifyContentType(stageLine);
       const severity = detectMismatchSeverity(prodLine, stageLine);
+      
       issues.push({
-        category: severity.category,
+        category: `${contentType} ${severity.category}`,
         severity: severity.level,
         page: `Page ${pageNum}`,
-        lineNum: pIdx + 1,
-        prodContent: `[${topicName}] ${prodLine.substring(0, 150)}`,
-        stageContent: stageLine.substring(0, 150),
+        lineNum: pIdx < prod.lines.length ? pIdx + 1 : sIdx + 1,
+        prodContent: pIdx < prod.lines.length ? `[${topicName}] ${prodLine.substring(0, 150)}` : 'EMPTY',
+        stageContent: sIdx < stage.lines.length ? stageLine.substring(0, 150) : 'EMPTY',
         description: severity.description,
       });
       pIdx++;
@@ -394,7 +415,22 @@ function comparePdfs(prod: PdfContent, stage: PdfContent): Issue[] {
     });
   }
 
-  // 5. Metadata comparison
+  // 5. Table of Contents check
+  const prodTOC = prod.lines.filter(l => /^\d+\.?\d*|^\w\s+\d+/.test(l.trim())).length;
+  const stageTOC = stage.lines.filter(l => /^\d+\.?\d*|^\w\s+\d+/.test(l.trim())).length;
+  if (Math.abs(prodTOC - stageTOC) > 5) {
+    issues.push({
+      category: 'Table of Contents Mismatch',
+      severity: 'Critical',
+      page: 'TOC',
+      lineNum: 0,
+      prodContent: `${prodTOC} entries`,
+      stageContent: `${stageTOC} entries`,
+      description: '❌ Table of Contents seems to have a different number of items. Check for missing or extra sections.',
+    });
+  }
+
+  // 6. Metadata comparison
   const allKeys = new Set([...Object.keys(prod.metadata), ...Object.keys(stage.metadata)]);
   for (const key of Array.from(allKeys)) {
     const pVal = String(prod.metadata[key] || '');
@@ -412,28 +448,133 @@ function comparePdfs(prod: PdfContent, stage: PdfContent): Issue[] {
     }
   }
 
+  // 6. Page Density / Potential Image check
+  for (let i = 0; i < Math.min(prod.pages.length, stage.pages.length); i++) {
+    const pPage = prod.pages[i];
+    const sPage = stage.pages[i];
+    const pDensity = pPage.text.length;
+    const sDensity = sPage.text.length;
+    
+    if (Math.abs(pDensity - sDensity) > 800) {
+      issues.push({
+        category: 'Page Layout / Image Mismatch',
+        severity: 'Major',
+        page: `Page ${pPage.pageNum}`,
+        lineNum: 0,
+        prodContent: `${pDensity} chars`,
+        stageContent: `${sDensity} chars`,
+        description: '⚠️ Significant difference in text density. This often indicates missing images, large charts, or major layout shifts.',
+      });
+    }
+  }
+
+  // 7. Link Comparison
+  const prodLinks = extractLinks(prod.lines.join(' '));
+  const stageLinks = extractLinks(stage.lines.join(' '));
+  
+  const allLinks = new Set([...prodLinks, ...stageLinks]);
+  for (const link of Array.from(allLinks)) {
+    if (prodLinks.includes(link) && !stageLinks.includes(link)) {
+      issues.push({
+        category: 'Broken / Missing Link',
+        severity: 'Major',
+        page: 'N/A',
+        lineNum: 0,
+        prodContent: link,
+        stageContent: '(missing)',
+        description: `❌ Link found in Prod but is missing in Stage: ${link}`,
+      });
+    }
+  }
+
+  // 8. Table Text Breaking / Truncation check
+  for (let t = 0; t < Math.min(prod.tables.length, stage.tables.length); t++) {
+    const pT = prod.tables[t];
+    const sT = stage.tables[t];
+    for (let r = 0; r < Math.min(pT.rows.length, sT.rows.length); r++) {
+      for (let c = 0; c < Math.min(pT.rows[r].length, sT.rows[r].length); c++) {
+        const pCell = pT.rows[r][c];
+        const sCell = sT.rows[r][c];
+        if (pCell.length > 5 && sCell.length < pCell.length * 0.7) {
+          issues.push({
+            category: 'Table Text Breaking',
+            severity: 'Major',
+            page: `Page ${pT.pageNum}`,
+            lineNum: 0,
+            prodContent: pCell,
+            stageContent: sCell,
+            description: '⚠️ Table text appears to be truncated or broken in Stage cell.',
+          });
+        }
+      }
+    }
+  }
+
+  // 9. Broken Image Placeholder check
+  const brokenImageMarkers = ['image not found', 'broken link', '[image]', 'placeholder.png', 'failed to load'];
+  stage.lines.forEach((line, idx) => {
+    for (const marker of brokenImageMarkers) {
+      if (line.toLowerCase().includes(marker)) {
+        issues.push({
+          category: 'Broken Image',
+          severity: 'Critical',
+          page: `Page ${getPageNum(stage, idx)}`,
+          lineNum: idx + 1,
+          prodContent: 'Expected Image',
+          stageContent: line,
+          description: `❌ Potential broken image marker found: "${marker}"`,
+        });
+      }
+    }
+  });
+
   return issues;
+}
+
+function extractLinks(text: string): string[] {
+  const urlRegex = /https?:\/\/[^\s)]+/g;
+  return Array.from(text.matchAll(urlRegex)).map(m => m[0]);
 }
 
 /** Helper to find page number for a global line index */
 function getPageNum(pdf: PdfContent, lineIdx: number): number {
+  if (pdf.pages.length === 0) return 1;
   let lineAccum = 0;
   for (const p of pdf.pages) {
     lineAccum += p.lines.length;
     if (lineIdx < lineAccum) return p.pageNum;
   }
-  return pdf.pageCount;
+  return pdf.pages[pdf.pages.length - 1].pageNum;
 }
 
 /** Helper to find the nearest heading/topic name for a line */
 function getTopicAtLine(pdf: PdfContent, lineIdx: number): string {
-  for (let i = lineIdx; i >= 0; i--) {
-    const line = pdf.lines[i].trim();
-    if (line.length > 3 && line.length < 100 && (line === line.toUpperCase() || /^[0-9.]+ /.test(line))) {
-       return line;
+  if (!pdf.lines || pdf.lines.length === 0) return 'General Content';
+  const start = Math.min(lineIdx, pdf.lines.length - 1);
+  for (let i = start; i >= 0; i--) {
+    const line = pdf.lines[i];
+    if (line && isHeading(line)) {
+       return line.trim();
     }
   }
   return 'General Content';
+}
+
+function isHeading(line: string): boolean {
+  const l = line.trim();
+  if (l.length < 3 || l.length > 120) return false;
+  // All caps OR Starts with number like 1.2.3 OR Starts with "Chapter/Section"
+  return (l === l.toUpperCase() && /[A-Z]/.test(l)) || 
+         /^\d+(\.\d+)*\s+[A-Z]/.test(l) || 
+         /^(Chapter|Section|Table of Contents|Appendix|Figure)\s+\d+/i.test(l);
+}
+
+function identifyContentType(line: string): string {
+  if (!line) return 'Text';
+  if (isHeading(line)) return 'Heading';
+  if (line.trim().length > 200) return 'Paragraph';
+  if (/^\s*•|\s*\d+\.\s/.test(line)) return 'List Item';
+  return 'Text';
 }
 
 function detectMismatchSeverity(prodLine: string, stageLine: string): { category: string; level: 'Critical' | 'Major' | 'Minor'; description: string } {
@@ -475,6 +616,38 @@ function countConsecutiveEmptyLines(lines: string[]): number {
     }
   }
   return count;
+}
+
+interface MatchScores {
+  overall: number;
+  headings: number;
+  tables: number;
+  images: number; // For PDFs, this refers to layout density mismatches
+  content: number;
+}
+
+function calculateMatchScores(issues: Issue[]): MatchScores {
+  let headingPenalty = 0;
+  let tablePenalty = 0;
+  let layoutPenalty = 0;
+  let contentPenalty = 0;
+  
+  issues.forEach(issue => {
+    const cat = issue.category.toLowerCase();
+    if (cat.includes('heading')) headingPenalty += 15;
+    else if (cat.includes('table')) tablePenalty += 20;
+    else if (cat.includes('layout') || cat.includes('density') || cat.includes('image')) layoutPenalty += 15;
+    else if (cat.includes('content') || cat.includes('mismatch')) contentPenalty += 10;
+    else contentPenalty += 5;
+  });
+
+  return {
+    overall: Math.max(0, 100 - (headingPenalty + tablePenalty + layoutPenalty + contentPenalty) / 3),
+    headings: Math.max(0, 100 - headingPenalty),
+    tables: Math.max(0, 100 - tablePenalty),
+    images: Math.max(0, 100 - layoutPenalty),
+    content: Math.max(0, 100 - contentPenalty)
+  };
 }
 
 /** Match PDF files between prod and stage by normalized name */
@@ -547,6 +720,29 @@ async function downloadPdf(page: Page, url: string, destPath: string): Promise<b
   }
 }
 
+/** Capture screenshot of a specific PDF page using Playwright */
+async function capturePdfPage(page: Page, pdfPath: string, pageNum: number, label: string, issueId: string): Promise<string> {
+  if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  
+  const fileName = `issue_${issueId}_${label}_p${pageNum}.png`;
+  const filePath = path.join(SCREENSHOTS_DIR, fileName);
+  
+  try {
+    // Use file URL with #page fragment (Chrome/Edge support)
+    const fileUrl = `file://${path.resolve(pdfPath)}#page=${pageNum}`;
+    await page.goto(fileUrl, { waitUntil: 'load', timeout: 30000 });
+    
+    // Give time for PDF viewer to render
+    await page.waitForTimeout(2000);
+    
+    await page.screenshot({ path: filePath, fullPage: false });
+    return `screenshots/${fileName}`;
+  } catch (e) {
+    console.error(`Failed to capture PDF screenshot for ${label} page ${pageNum}:`, e);
+    return '';
+  }
+}
+
 /** Build Excel Report */
 async function buildReport(pairs: { prodFile: string; stageFile: string; issues: Issue[]; prodContent: PdfContent; stageContent: PdfContent }[]): Promise<void> {
   if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true });
@@ -599,6 +795,8 @@ async function buildReport(pairs: { prodFile: string; stageFile: string; issues:
     { header: 'Prod Content', key: 'prodContent', width: 50 },
     { header: 'Stage Content', key: 'stageContent', width: 50 },
     { header: 'Description', key: 'description', width: 45 },
+    { header: 'Prod Screenshot', key: 'screenshotProd', width: 25 },
+    { header: 'Stage Screenshot', key: 'screenshotStage', width: 25 },
   ];
   styleHeader(issueSheet);
 
@@ -613,7 +811,13 @@ async function buildReport(pairs: { prodFile: string; stageFile: string; issues:
         prodContent: issue.prodContent,
         stageContent: issue.stageContent,
         description: issue.description,
+        screenshotProd: issue.screenshotProd ? { text: 'View Prod', hyperlink: `./${issue.screenshotProd}` } : '',
+        screenshotStage: issue.screenshotStage ? { text: 'View Stage', hyperlink: `./${issue.screenshotStage}` } : '',
       });
+      
+      if (issue.screenshotProd) row.getCell('screenshotProd').font = { underline: true, color: { argb: 'FF0000FF' } };
+      if (issue.screenshotStage) row.getCell('screenshotStage').font = { underline: true, color: { argb: 'FF0000FF' } };
+
       const sevCell = row.getCell('severity');
       switch (issue.severity) {
         case 'Critical': sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } } as ExcelJS.FillPattern; sevCell.font = { color: { argb: 'FFFFFFFF' }, bold: true }; break;
@@ -679,7 +883,39 @@ async function buildReport(pairs: { prodFile: string; stageFile: string; issues:
     }
   }
 
-  // ─── Sheet 5: Line-by-Line Diff (first 500 differences) ───
+  // ─── Sheet 5: Missing & Extra Content (High Priority) ───
+  const missingSheet = wb.addWorksheet('Missing & Extra');
+  missingSheet.columns = [
+    { header: 'Type', key: 'type', width: 20 },
+    { header: 'File', key: 'file', width: 35 },
+    { header: 'Page', key: 'page', width: 10 },
+    { header: 'Category', key: 'category', width: 22 },
+    { header: 'Prod Content', key: 'prodContent', width: 60 },
+    { header: 'Stage Content', key: 'stageContent', width: 60 },
+    { header: 'Description', key: 'description', width: 50 },
+  ];
+  styleHeader(missingSheet, 'FFC00000'); // Dark Red for missing/extra
+
+  for (const p of pairs) {
+    const criticalIssues = p.issues.filter(i => 
+      i.category.includes('Missing') || 
+      i.category.includes('Extra') || 
+      i.category.includes('Page Count Mismatch')
+    );
+    for (const issue of criticalIssues) {
+      missingSheet.addRow({
+        type: issue.category.includes('Missing') ? 'MISSING ❌' : 'EXTRA ➕',
+        file: p.prodFile,
+        page: issue.page,
+        category: issue.category,
+        prodContent: issue.prodContent,
+        stageContent: issue.stageContent,
+        description: issue.description,
+      });
+    }
+  }
+
+  // ─── Sheet 6: Line-by-Line Diff ───
   const diffSheet = wb.addWorksheet('Line Diff (Sample)');
   diffSheet.columns = [
     { header: 'File', key: 'file', width: 30 },
@@ -715,15 +951,16 @@ async function buildReport(pairs: { prodFile: string; stageFile: string; issues:
   }
 
   const filename = process.env.REPORT_FILENAME || 'pdf-validation.xlsx';
-  const reportPath = path.join(REPORTS_DIR, filename);
+  const reportPath = path.isAbsolute(filename) ? filename : path.join(REPORTS_DIR, filename);
+  
   await wb.xlsx.writeFile(reportPath);
   console.log(`📊 Report saved: ${reportPath}`);
 }
 
-function styleHeader(sheet: ExcelJS.Worksheet) {
+function styleHeader(sheet: ExcelJS.Worksheet, color: string = 'FF1F4E79') {
   const headerRow = sheet.getRow(1);
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } } as ExcelJS.FillPattern;
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } } as ExcelJS.FillPattern;
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   sheet.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];
 }
@@ -756,10 +993,18 @@ test.describe('PDF Validation: Stage vs Prod', () => {
     if (stageFiles.length === 0 && prodFiles.length > 0) {
       console.log('⚠️  Stage folder empty — attempting to download Stage PDFs from AEM...');
       const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      const stageBaseUrl = new URL(config.stage).origin;
+      let stageBaseUrl = '';
+      try {
+        if (config.stage) stageBaseUrl = new URL(config.stage).origin;
+      } catch (e) {
+        console.warn('Invalid Stage URL in config:', config.stage);
+      }
 
-      const ctx = await getAuthContext(browser);
-      const page = await ctx.newPage();
+      if (!stageBaseUrl) {
+        console.warn('⚠️ No Stage URL available to download PDFs.');
+      } else {
+        const ctx = await getAuthContext(browser);
+        const page = await ctx.newPage();
 
       // Navigate to stage to check auth
       await page.goto(appendWcmDisabled(config.stage), { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -807,6 +1052,7 @@ test.describe('PDF Validation: Stage vs Prod', () => {
         stageFiles = stageFiles.filter(f => f === process.env.STAGE_FILE);
       }
     }
+  }
 
     if (stageFiles.length === 0 && prodFiles.length > 0) {
       throw new Error(`❌ STAGE FILE NOT FOUND. Ensure you uploaded the correct Stage file and that its name matches exactly: "${process.env.STAGE_FILE || 'any'}"`);
@@ -833,38 +1079,72 @@ test.describe('PDF Validation: Stage vs Prod', () => {
 
     console.log(`🔗 Matched ${pairs.length} PDF pair(s) for comparison`);
 
-    // Parse and compare each pair
-    const results: { prodFile: string; stageFile: string; issues: Issue[]; prodContent: PdfContent; stageContent: PdfContent }[] = [];
+    // Parse and compare each pair in parallel
+    const results = await Promise.all(pairs.map(async (pair) => {
+      console.log(`📄 Starting comparison: "${pair.prod}" vs "${pair.stage}"`);
 
-    for (const pair of pairs) {
-      console.log(`\n📄 Comparing: "${pair.prod}" vs "${pair.stage}"`);
+      const [prodBuffer, stageBuffer] = await Promise.all([
+        fs.promises.readFile(path.join(PROD_DIR, pair.prod)),
+        fs.promises.readFile(path.join(STAGE_DIR, pair.stage))
+      ]);
 
-      const prodBuffer = fs.readFileSync(path.join(PROD_DIR, pair.prod));
-      const stageBuffer = fs.readFileSync(path.join(STAGE_DIR, pair.stage));
-
-      const prodContent = await parsePdf(prodBuffer, pair.prod);
-      const stageContent = await parsePdf(stageBuffer, pair.stage);
-
-      console.log(`   Prod: ${prodContent.pageCount} pages, ${prodContent.lines.length} lines, ${prodContent.tables.length} tables`);
-      console.log(`   Stage: ${stageContent.pageCount} pages, ${stageContent.lines.length} lines, ${stageContent.tables.length} tables`);
+      const [prodContent, stageContent] = await Promise.all([
+        parsePdf(prodBuffer, pair.prod),
+        parsePdf(stageBuffer, pair.stage)
+      ]);
 
       const issues = comparePdfs(prodContent, stageContent);
-      console.log(`   Issues found: ${issues.length} (Critical: ${issues.filter(i => i.severity === 'Critical').length}, Major: ${issues.filter(i => i.severity === 'Major').length})`);
+      
+      // Capture screenshots if needed (in parallel for each pair)
+      if (issues.length > 0) {
+        const ssPage = await browser.newPage();
+        const capturedPages = new Set<string>();
+        
+        for (const issue of issues) {
+          if (issue.severity === 'Critical' || issue.severity === 'Major') {
+            const pNum = parseInt(issue.page.replace('Page ', '')) || 1;
+            if (capturedPages.size < 10 && !capturedPages.has(`${pNum}`)) {
+              const issueId = Math.random().toString(36).substring(7);
+              [issue.screenshotProd, issue.screenshotStage] = await Promise.all([
+                capturePdfPage(ssPage, path.join(PROD_DIR, pair.prod), pNum, 'prod', issueId),
+                capturePdfPage(ssPage, path.join(STAGE_DIR, pair.stage), pNum, 'stage', issueId)
+              ]);
+              capturedPages.add(`${pNum}`);
+            }
+          }
+        }
+        await ssPage.close();
+      }
 
-      results.push({
+      console.log(`✅ Finished: "${pair.prod}" (${issues.length} issues)`);
+      return {
         prodFile: pair.prod,
         stageFile: pair.stage,
         issues,
         prodContent,
         stageContent,
-      });
+      };
+    }));
+
+    // Calculate aggregate scores for all pairs
+    const aggregate = results.reduce((acc, r) => {
+      const s = calculateMatchScores(r.issues);
+      acc.overall += s.overall;
+      acc.headings += s.headings;
+      acc.tables += s.tables;
+      acc.images += s.images;
+      acc.content += s.content;
+      return acc;
+    }, { overall: 0, headings: 0, tables: 0, images: 0, content: 0 });
+
+    if (results.length > 0) {
+      Object.keys(aggregate).forEach(k => (aggregate as any)[k] = Math.round((aggregate as any)[k] / results.length));
     }
 
-    // Generate report
+    console.log(`\n::RESULTS::${JSON.stringify(aggregate)}`);
+    console.log(`\n✅ PDF Validation Complete: ${results.length} pair(s), ${results.reduce((sum, r) => sum + r.issues.length, 0)} total issues`);
+    
     await buildReport(results);
-
-    const totalIssues = results.reduce((sum, r) => sum + r.issues.length, 0);
-    console.log(`\n✅ PDF Validation Complete: ${pairs.length} pair(s), ${totalIssues} total issues`);
     console.log(`📊 Report: ${REPORT_PATH}`);
   });
 });

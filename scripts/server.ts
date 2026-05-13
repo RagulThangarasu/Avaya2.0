@@ -25,6 +25,13 @@ const CONFIG_PATH = path.join(ROOT, 'config/test-urls.json');
 const PAGES_DIR = path.join(ROOT, 'pages');
 const PDF_DIR = path.join(ROOT, 'PDF');
 const REPORTS_DIR = path.join(ROOT, 'reports');
+const UI_REPORTS_DIR = path.join(ROOT, '.ui_reports');
+const CSV_DIR = path.join(ROOT, '.temp_csv');
+
+if (!fs.existsSync(UI_REPORTS_DIR)) fs.mkdirSync(UI_REPORTS_DIR, { recursive: true });
+if (!fs.existsSync(CSV_DIR)) fs.mkdirSync(CSV_DIR, { recursive: true });
+
+if (!fs.existsSync(UI_REPORTS_DIR)) fs.mkdirSync(UI_REPORTS_DIR, { recursive: true });
 
 app.use(cors());
 app.use(express.json());
@@ -52,6 +59,18 @@ const upload = multer({
   },
 });
 
+// Multer for CSV uploads
+const csvUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req: any, _file: any, cb: any) => {
+      cb(null, CSV_DIR);
+    },
+    filename: (_req: any, file: any, cb: any) => {
+      cb(null, `master-${Date.now()}.csv`);
+    },
+  }),
+});
+
 // ─── State ───────────────────────────────────────────────────────────────────
 
 interface Job {
@@ -61,6 +80,13 @@ interface Job {
   status: 'running' | 'done' | 'error';
   summary: string;
   reportFile?: string;
+  results?: {
+    overall: number;
+    headings: number;
+    tables: number;
+    images: number;
+    content: number;
+  };
 }
 
 const jobs = new Map<string, Job>();
@@ -68,14 +94,10 @@ let currentJob: Job | null = null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Appends ?wcmmode=disabled to a URL if it's an AEM Stage URL */
+/** Returns URLs as-is (previously added ?wcmmode=disabled) */
 function normalizeUrls(stage: string, production: string) {
-  let normalizedStage = stage;
-  if (stage && stage.includes('adobeaemcloud.com') && !stage.includes('wcmmode=disabled')) {
-    const separator = stage.includes('?') ? '&' : '?';
-    normalizedStage = `${stage}${separator}wcmmode=disabled`;
-  }
-  return { stage: normalizedStage, production };
+  // User requested to stop adding ?wcmmode=disabled
+  return { stage, production };
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
@@ -150,11 +172,20 @@ app.post('/api/upload-pdf', upload.single('pdf'), (req: any, res: any) => {
   res.json({ ok: true, filename: req.file.originalname, env: req.body.env });
 });
 
+// Upload CSV
+app.post('/api/upload-csv', csvUpload.single('csv'), (req: any, res: any) => {
+  if (!req.file) {
+    res.json({ error: 'No file uploaded' });
+    return;
+  }
+  res.json({ ok: true, path: req.file.path, filename: req.file.originalname });
+});
+
 // Run content-parity validation
 app.post('/api/run/content-parity', (req: any, res: any) => {
   const { stage, production } = req.body;
-  if (!stage || !production) {
-    res.json({ error: 'Both stage and production URLs are required' });
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
     return;
   }
 
@@ -163,16 +194,15 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
 
-  const reportFile = `content-parity-report.xlsx`;
+  const reportFile = `content-parity-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
 
   const job = startTest('content-parity', [
-    'npx', 'playwright', 'test',
-    'tests/content-validation/content-parity.spec.ts',
-    '--reporter=list'
+    'python3', '-u', 'scripts/content_parity.py'
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
-    REPORT_FILENAME: reportFile
+    REPORT_FILENAME: reportPath
   });
   job.reportFile = reportFile;
 
@@ -182,17 +212,18 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
 // Run leftnav-validation
 app.post('/api/run/leftnav-validation', (req: any, res: any) => {
   const { stage, production } = req.body;
-  if (!stage || !production) {
-    res.json({ error: 'Both stage and production URLs are required' });
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
     return;
   }
 
   // Update test-urls.json with normalized URLs (for record keeping)
-  const normalized = normalizeUrls(stage, production);
+  const normalized = normalizeUrls(stage || '', production || '');
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
 
-  const reportFile = `leftnav-toc-validation-report.xlsx`;
+  const reportFile = `leftnav-toc-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
 
   const job = startTest('leftnav-validation', [
     'npx', 'playwright', 'test',
@@ -201,7 +232,7 @@ app.post('/api/run/leftnav-validation', (req: any, res: any) => {
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
-    REPORT_FILENAME: reportFile
+    REPORT_FILENAME: reportPath
   });
   job.reportFile = reportFile;
 
@@ -213,26 +244,107 @@ app.post('/api/run/pdf-validation', (req: any, res: any) => {
   const { stage, production, stageFile, prodFile } = req.body;
   
   // Update test-urls.json for record keeping (if urls provided)
-  if (stage && production) {
-    const normalized = normalizeUrls(stage, production);
+  if (stage || production) {
+    const normalized = normalizeUrls(stage || '', production || '');
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
   }
 
-  const reportFile = `pdf-validation-report.xlsx`;
+  const reportFile = `pdf-validation-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
 
   const job = startTest('pdf-validation', [
     'npx', 'playwright', 'test',
     'tests/content-validation/pdf-validation.spec.ts',
     '--reporter=list'
   ], {
-    REPORT_FILENAME: reportFile,
+    REPORT_FILENAME: reportPath,
     STAGE_FILE: stageFile || '',
     PROD_FILE: prodFile || ''
   });
   job.reportFile = reportFile;
 
   res.json({ jobId: job.id });
+});
+
+// Run metadata-validation
+app.post('/api/run/metadata-validation', (req: any, res: any) => {
+  const { stageUrl, csvPath } = req.body;
+  if (!stageUrl || !csvPath) {
+    res.json({ error: 'Stage URL and CSV file are required' });
+    return;
+  }
+
+  const reportFile = `metadata-validation-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
+
+  const job = startTest('metadata-validation', [
+    'python3', '-u', 'scripts/metadata_validation.py'
+  ], {
+    STAGE_URL: stageUrl,
+    MASTER_CSV: csvPath,
+    REPORT_FILENAME: reportPath
+  });
+  job.reportFile = reportFile;
+
+  res.json({ jobId: job.id });
+});
+
+// Run broken-links crawler (Python Version)
+app.post('/api/run/broken-links', (req: any, res: any) => {
+  const { url } = req.body;
+  if (!url) {
+    res.json({ error: 'URL is required' });
+    return;
+  }
+
+  const reportFile = `broken-links-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
+
+  const job = startTest('broken-links', [
+    'python3', '-u', 'scripts/broken_links.py'
+  ], {
+    PROD_URL: url,
+    REPORT_FILENAME: reportPath
+  });
+  job.reportFile = reportFile;
+
+  res.json({ jobId: job.id });
+});
+
+// Run AEM Login
+app.post('/api/login', (req: any, res: any) => {
+  const { url, username, password } = req.body;
+  if (!url || !username || !password) {
+    res.json({ error: 'URL, username, and password are required' });
+    return;
+  }
+
+  const job = startTest('aem-login', [
+    'npx', 'tsx', 'run_login.ts'
+  ], {
+    BASE_URL: url,
+    AEM_USERNAME: username,
+    AEM_PASSWORD: password
+  });
+
+  res.json({ jobId: job.id });
+});
+
+// Disconnect/Logout AEM
+app.post('/api/logout', (_req, res) => {
+  try {
+    const sessionDir = path.join(ROOT, 'auth-sessions');
+    if (fs.existsSync(sessionDir)) {
+      const files = fs.readdirSync(sessionDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(sessionDir, file));
+      }
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to disconnect: ' + err.message });
+  }
 });
 
 // Stream logs via SSE
@@ -255,7 +367,7 @@ app.get('/api/logs/:jobId', (req, res) => {
   }
 
   if (job.status === 'done') {
-    res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile, results: job.results })}\n\n`);
     res.end();
     return;
   }
@@ -277,7 +389,7 @@ app.get('/api/logs/:jobId', (req, res) => {
       lastIdx++;
     }
     if (job.status === 'done') {
-      res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile, results: job.results })}\n\n`);
       clearInterval(poller);
       clearInterval(interval);
       res.end();
@@ -323,16 +435,30 @@ app.post('/api/stop', (req, res) => {
 app.use('/reports', express.static(REPORTS_DIR));
 
 // Explicit download endpoint — forces browser Save As dialog
-app.get('/api/download/:filename', (req, res) => {
-  const filename = path.basename(req.params.filename); // sanitize
-  const filepath = path.join(REPORTS_DIR, filename);
-  if (!fs.existsSync(filepath)) {
-    res.status(404).json({ error: `Report not found: ${filename}` });
-    return;
+app.get('/api/download/:filename', (req: any, res: any) => {
+  const { filename } = req.params;
+  const filePath = path.resolve(UI_REPORTS_DIR, filename);
+  const fallbackPath = path.resolve(REPORTS_DIR, filename);
+  
+  console.log(`🔍 Download Request: ${filename}`);
+  console.log(`   Trying: ${filePath}`);
+  
+  const finalPath = fs.existsSync(filePath) ? filePath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
+
+  if (finalPath) {
+    console.log(`   ✅ Found: ${finalPath}`);
+    res.download(finalPath, filename, (err) => {
+      if (err) {
+        console.error(`   ❌ Download error for ${filename}:`, err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to send file' });
+        }
+      }
+    });
+  } else {
+    console.warn(`   ⚠️ Not found in .ui_reports or reports/`);
+    res.status(404).json({ error: 'File not found' });
   }
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.sendFile(filepath);
 });
 
 // List available reports
@@ -354,17 +480,51 @@ app.get('/api/reports', (_req, res) => {
 
 // Get report data as JSON for UI rendering
 app.get('/api/report-data/:type', async (req, res) => {
+  const { type } = req.params;
+  const jobId = req.query.jobId as string;
+  
   const typeMap: Record<string, string> = {
-    'content-parity': 'content-parity.xlsx',
-    'leftnav':        'leftnav-toc-validation.xlsx',
-    'pdf-validation': 'pdf-validation.xlsx',
+    'content-parity': 'content-parity-report.xlsx',
+    'leftnav':        'leftnav-toc-validation-report.xlsx',
+    'pdf-validation': 'pdf-validation-report.xlsx',
+    'metadata-validation': 'metadata-validation-report.xlsx',
+    'broken-links':   'broken-links-report.xlsx',
   };
-  const xlsxName = typeMap[req.params.type];
-  if (!xlsxName) { res.status(400).json({ error: 'Unknown report type' }); return; }
 
-  const xlsxPath = path.join(REPORTS_DIR, xlsxName);
-  if (!fs.existsSync(xlsxPath)) {
-    res.status(404).json({ error: `Excel report not found. Run validation first.` });
+  let xlsxPath = '';
+  
+  // 1. If jobId provided, look in UI_REPORTS_DIR via jobs map
+  if (jobId && jobs.has(jobId)) {
+    const job = jobs.get(jobId)!;
+    if (job.reportFile) {
+      xlsxPath = path.join(UI_REPORTS_DIR, job.reportFile);
+    }
+  }
+
+  // 2. If no path yet, look for latest timestamped file in UI_REPORTS_DIR for this type
+  if (!xlsxPath || !fs.existsSync(xlsxPath)) {
+    try {
+      const files = fs.readdirSync(UI_REPORTS_DIR)
+        .filter(f => f.startsWith(type) && f.endsWith('.xlsx'))
+        .map(f => ({ name: f, time: fs.statSync(path.join(UI_REPORTS_DIR, f)).mtime.getTime() }))
+        .sort((a, b) => b.time - a.time);
+      
+      if (files.length > 0) {
+        xlsxPath = path.join(UI_REPORTS_DIR, files[0].name);
+      }
+    } catch (e) {}
+  }
+
+  // 3. Fallback to static name in REPORTS_DIR
+  if (!xlsxPath || !fs.existsSync(xlsxPath)) {
+    const staticName = typeMap[type];
+    if (staticName) {
+      xlsxPath = path.join(REPORTS_DIR, staticName);
+    }
+  }
+
+  if (!xlsxPath || !fs.existsSync(xlsxPath)) {
+    res.status(404).json({ error: `Excel report for "${type}" not found. Run validation first.` });
     return;
   }
 
@@ -396,9 +556,10 @@ app.get('/api/report-data/:type', async (req, res) => {
 // Generate PDF report from xlsx data
 app.get('/api/generate-pdf/:type', async (req, res) => {
   const typeMap: Record<string, string> = {
-    'content-parity': 'content-parity.xlsx',
-    'leftnav':        'leftnav-toc-validation.xlsx',
-    'pdf-validation': 'pdf-validation.xlsx',
+    'content-parity': 'content-parity-report.xlsx',
+    'leftnav':        'leftnav-toc-validation-report.xlsx',
+    'pdf-validation': 'pdf-validation-report.xlsx',
+    'metadata-validation': 'metadata-validation-report.xlsx',
   };
   const xlsxName = typeMap[req.params.type];
   if (!xlsxName) { res.status(400).json({ error: 'Unknown report type' }); return; }
@@ -484,7 +645,8 @@ app.get('/api/generate-pdf/:type', async (req, res) => {
     });
     await browser.close();
 
-    fs.writeFileSync(pdfPath, pdfBuffer);
+    // DONT save to disk if it's a UI request (we stream it)
+    // res.send(pdfBuffer) already sends the buffer.
 
     res.setHeader('Content-Disposition', `attachment; filename="${pdfFilename}"`);
     res.setHeader('Content-Type', 'application/pdf');
@@ -518,7 +680,19 @@ function startTest(name: string, cmd: string[], extraEnv: Record<string, string>
   proc.stdout?.on('data', (data: Buffer) => {
     const lines = data.toString().split('\n');
     for (const line of lines) {
-      if (line.trim()) job.logs.push(line);
+      const trimmed = line.trim();
+      if (trimmed) {
+        if (trimmed.startsWith('::RESULTS::')) {
+          try {
+            const resultData = JSON.parse(trimmed.replace('::RESULTS::', ''));
+            job.results = resultData;
+          } catch (e) {
+            console.error('Failed to parse results JSON:', e);
+          }
+        } else {
+          job.logs.push(line);
+        }
+      }
     }
   });
 
@@ -562,6 +736,17 @@ function formatSize(bytes: number): string {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
+// Global Error Handler
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error('💥 Server Error:', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
+// 404 handler for API
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+});
+
 app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════╗');
@@ -573,6 +758,7 @@ app.listen(PORT, () => {
   console.log('║    • Content Validation  → /content-validation.html      ║');
   console.log('║    • Left Nav Validation → /leftnav-validation.html      ║');
   console.log('║    • PDF Validation      → /pdf-validation.html          ║');
+  console.log('║    • Metadata Validation → /metadata-validation.html     ║');
   console.log('║                                                          ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
   console.log('');
