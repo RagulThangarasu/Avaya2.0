@@ -296,7 +296,7 @@
         <span id="reportTimestamp" style="font-size:12px; color:#666;"></span>
       </div>
       <div class="btn-group">
-        <a id="xlsxDownloadBtn" href="/api/download/pdf-validation-report.xlsx" download="pdf-validation-report.xlsx"
+        <a id="xlsxDownloadBtn" href="api/download/pdf-validation-report.xlsx" download="pdf-validation-report.xlsx"
            style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:#232527;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.15);">
           📊 Download Excel
         </a>
@@ -359,6 +359,14 @@
     const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
     let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
 
+    // Fix initial download links if on GH Pages
+    if (API_BASE) {
+      document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
+        const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
+        a.href = API_BASE + path;
+      });
+    }
+
     // -- AEM Status --
     function updateAemStatus() {
       fetch(`${API_BASE}/api/aem-status`)
@@ -385,7 +393,7 @@
     }
     updateAemStatus();
     function checkExistingReport() {
-      fetch('/api/reports')
+      fetch(`${API_BASE}/api/reports`)
         .then(r => r.json())
         .then(files => {
           const reportExists = files.some(f => f.name === 'pdf-validation.xlsx');
@@ -459,14 +467,14 @@
       statusEl.className = 'status running';
       statusEl.innerHTML = '<span class="spinner"></span> Waiting for manual login... Check browser window.';
       
-      fetch('/api/login', {
+      fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, username: user, password: pass })
       }).then(r => r.json()).then(data => {
         if (data.error) throw new Error(data.error);
         
-        const source = new EventSource('/api/logs/' + data.jobId);
+        const source = new EventSource(`${API_BASE}/api/logs/${data.jobId}`);
         source.onmessage = function(e) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'done') {
@@ -502,7 +510,7 @@
     function disconnectAem() {
       if (!confirm('Are you sure you want to disconnect from AEM? This will clear your session.')) return;
       
-      fetch('/api/logout', { method: 'POST' })
+      fetch(`${API_BASE}/api/logout`, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
           if (data.error) throw new Error(data.error);

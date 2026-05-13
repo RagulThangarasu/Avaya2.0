@@ -190,9 +190,9 @@
           ✨ Reports Generated Successfully
         </h3>
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-          <a id="xlsxDownloadBtn" href="/api/download/content-parity-report.xlsx" download="content-parity-report.xlsx"
-             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#232527;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.15);">
-            📊 Download Excel Report
+          <a id="xlsxDownloadBtn" href="api/download/content-parity-report.xlsx" download="content-parity-report.xlsx"
+             style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:#232527;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.15);">
+            📊 Download Excel
           </a>
           <button id="pdfDownloadBtn" onclick="downloadPdf()"
              style="display:none;align-items:center;gap:10px;padding:10px 20px;background:#da291c;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(218,41,28,0.2);">
@@ -257,6 +257,14 @@
     // ── Backend URL Configuration ──
     const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
     let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
+
+    // Fix initial download links if on GH Pages
+    if (API_BASE) {
+      document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
+        const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
+        a.href = API_BASE + path;
+      });
+    }
 
     // ── AEM Status ──────────────────────────────────────────
     function updateAemStatus() {
@@ -413,7 +421,7 @@
     }
 
     // Load saved URLs
-    fetch('/api/config')
+    fetch(`${API_BASE}/api/config`)
       .then(r => r.json())
       .then(data => {
         document.getElementById('stageUrl').value = data.stage || '';
@@ -471,7 +479,7 @@
         }
         currentJobId = data.jobId;
         // Start streaming logs
-        eventSource = new EventSource('/api/logs/' + data.jobId);
+        eventSource = new EventSource(`${API_BASE}/api/logs/${data.jobId}`);
         eventSource.onmessage = function(e) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'log') {
@@ -565,7 +573,7 @@
       btn.textContent = '⏳ Generating PDF...';
       statusEl.textContent = 'This may take 10-30 seconds...';
 
-      fetch('/api/generate-pdf/content-parity')
+      fetch(`${API_BASE}/api/generate-pdf/content-parity`)
         .then(r => {
           if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Failed'); });
           return r.blob();
@@ -598,7 +606,7 @@
       btn.disabled = true;
       btn.textContent = '⏳ Loading Data...';
 
-      fetch('/api/report-data/content-parity')
+      fetch(`${API_BASE}/api/report-data/content-parity`)
         .then(r => r.json())
         .then(data => {
           if (data.error) throw new Error(data.error);
