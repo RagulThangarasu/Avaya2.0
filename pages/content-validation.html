@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Content Parity Validation</title>
+  <script>
+    // AUTOMATIC REDIRECT TO LOCALHOST (Complete Fix for Mixed Content)
+    if (window.location.hostname.includes('github.io')) {
+      const localUrl = window.location.href.replace('https://ragulthangarasu.github.io/Avaya2.0', 'http://localhost:3000');
+      window.location.replace(localUrl);
+    }
+  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
