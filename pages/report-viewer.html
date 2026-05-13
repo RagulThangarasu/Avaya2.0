@@ -184,9 +184,13 @@
     </main>
 
     <script>
+<<<<<<< HEAD
         // ── Backend URL Configuration ──
         const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
         const API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
+=======
+        const API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
+>>>>>>> parent of f3e3ae6 (Automatic deployment)
 
         const params = new URLSearchParams(window.location.search);
         const reportType = params.get('type');
