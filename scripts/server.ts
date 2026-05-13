@@ -37,13 +37,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.static(PAGES_DIR));
-app.use('/reports', express.static(UI_REPORTS_DIR));
-
-// Log external IP for whitelisting help
-import { exec } from 'child_process';
-exec('curl -s https://ifconfig.me', (err, stdout) => {
-  if (!err) console.log(`🌍 Server External IP: ${stdout.trim()}`);
-});
 
 // Multer for PDF uploads
 const upload = multer({
@@ -207,6 +200,31 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
 
   const job = startTest('content-parity', [
     'python3', '-u', 'scripts/content_parity.py'
+  ], {
+    STAGE_URL: normalized.stage,
+    PROD_URL: normalized.production,
+    REPORT_FILENAME: reportPath
+  });
+  res.json({ jobId: job.id });
+});
+
+// Run deep-content-validation
+app.post('/api/run/deep-content-validation', (req: any, res: any) => {
+  const { stage, production } = req.body;
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
+    return;
+  }
+
+  const normalized = normalizeUrls(stage, production);
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
+
+  const reportFile = `deep-content-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
+
+  const job = startTest('deep-content', [
+    'python3', '-u', 'scripts/deep_content_validation.py'
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
@@ -386,34 +404,32 @@ app.get('/api/logs/:jobId', (req, res) => {
   }
 
   // Stream new logs
-  let lastIdx = job.logs.length;
-  let heartbeatCount = 0;
-  const poller = setInterval(() => {
-    // Send heartbeat every 10 seconds to keep connection alive
-    heartbeatCount++;
-    if (heartbeatCount >= 20) { 
-      res.write(`: heartbeat\n\n`);
-      heartbeatCount = 0;
-    }
+  const interval = setInterval(() => {
+    // Check for new logs since last send
+  }, 500);
 
+  let lastIdx = job.logs.length;
+  const poller = setInterval(() => {
     while (lastIdx < job.logs.length) {
       res.write(`data: ${JSON.stringify({ type: 'log', data: job.logs[lastIdx] })}\n\n`);
       lastIdx++;
-      heartbeatCount = 0;
     }
     if (job.status === 'done') {
       res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile, results: job.results })}\n\n`);
       clearInterval(poller);
+      clearInterval(interval);
       res.end();
     } else if (job.status === 'error') {
       res.write(`data: ${JSON.stringify({ type: 'error', data: job.summary })}\n\n`);
       clearInterval(poller);
+      clearInterval(interval);
       res.end();
     }
-  }, 500);
+  }, 300);
 
   req.on('close', () => {
     clearInterval(poller);
+    clearInterval(interval);
   });
 });
 
@@ -499,6 +515,7 @@ app.get('/api/report-data/:type', async (req, res) => {
     'pdf-validation': 'pdf-validation-report.xlsx',
     'metadata-validation': 'metadata-validation-report.xlsx',
     'broken-links':   'broken-links-report.xlsx',
+    'deep-content':   'deep-content-validation-report.xlsx',
   };
 
   let xlsxPath = '';
@@ -570,6 +587,7 @@ app.get('/api/generate-pdf/:type', async (req, res) => {
     'leftnav':        'leftnav-toc-validation-report.xlsx',
     'pdf-validation': 'pdf-validation-report.xlsx',
     'metadata-validation': 'metadata-validation-report.xlsx',
+    'deep-content':   'deep-content-validation-report.xlsx',
   };
   const xlsxName = typeMap[req.params.type];
   if (!xlsxName) { res.status(400).json({ error: 'Unknown report type' }); return; }

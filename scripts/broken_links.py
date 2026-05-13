@@ -23,13 +23,6 @@ if not START_URL:
     print("❌ Error: No START_URL provided.")
     sys.exit(1)
 
-# Debug: External IP
-import subprocess
-try:
-    ip = subprocess.check_output(['curl', '-s', 'https://ifconfig.me']).decode('utf-8').strip()
-    print(f"🌍 Running from IP: {ip}")
-except: pass
-
 print(f"🚀 Starting Python Broken Link Crawler for: {START_URL}")
 
 RESULTS = []

@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Metadata Validation | Avaya Validation Dashboard</title>
-  <script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
@@ -171,7 +170,7 @@
   <script>
     // ── Backend URL Configuration ──
     const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : (localStorage.getItem('backend_api_url') || 'http://localhost:3000');
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
 
     let uploadedFile = null;
     let currentJobId = null;

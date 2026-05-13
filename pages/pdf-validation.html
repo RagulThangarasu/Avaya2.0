@@ -354,12 +354,13 @@
     </div>
   </div>
 
+  <script>
     // ── Backend URL Configuration ──
     const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : (localStorage.getItem('backend_api_url') || 'http://localhost:3000');
-    
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
+
     // Fix initial download links if on GH Pages
-    if (API_BASE.includes('://')) {
+    if (API_BASE) {
       document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
         const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
         a.href = API_BASE + path;

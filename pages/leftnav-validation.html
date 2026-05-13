@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Left Nav TOC Validation</title>
-  <script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
@@ -251,12 +250,11 @@
 
   <script>
     // ── Backend URL Configuration ──
-    // ── Backend URL Configuration ──
     const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : (localStorage.getItem('backend_api_url') || 'http://localhost:3000');
-    
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
+
     // Fix initial download links if on GH Pages
-    if (API_BASE.includes('://')) {
+    if (API_BASE) {
       document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
         const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
         a.href = API_BASE + path;
@@ -513,12 +511,14 @@
         };
       }).catch(err => {
         status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
-        status.innerHTML = `❌ <strong>Backend Unreachable</strong><br>
+        if (window.location.hostname.includes('github.io')) {
+          status.innerHTML = `❌ <strong>Backend Unreachable</strong><br>
             The dashboard cannot connect to your local server. <br><br>
             1. Ensure <code>npm run server</code> is running.<br>
             2. <strong>Browser Security:</strong> GitHub Pages (HTTPS) cannot talk to Localhost (HTTP) directly.<br>
             <a href="http://localhost:3000/leftnav-validation.html" style="display:inline-block; margin-top:10px; padding:8px 16px; background:#da291c; color:white; text-decoration:none; border-radius:4px; font-weight:bold;">🚀 Switch to Local Dashboard</a>
             <p style="font-size:11px; margin-top:10px;">Alternatively, click the ⚙️ icon above to configure a secure tunnel (ngrok).</p>`;
+        } else {
           status.textContent = '❌ Failed to start: ' + err.message;
         }
         runBtn.disabled = false;

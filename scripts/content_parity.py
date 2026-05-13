@@ -35,23 +35,9 @@ if not STAGE_URL or not PROD_URL:
     print("❌ Error: Missing STAGE_URL or PROD_URL.")
     sys.exit(1)
 
-# Debug: External IP
-import subprocess
-try:
-    ip = subprocess.check_output(['curl', '-s', 'https://ifconfig.me']).decode('utf-8').strip()
-    print(f"🌍 Running from IP: {ip}")
-except: pass
-
 print(f"🚀 Starting Content Parity Validation")
 print(f"   Published (Stage): {STAGE_URL}")
 print(f"   Prod:              {PROD_URL}")
-
-async def debug_screenshot(page, name):
-    try:
-        path = os.path.join(UI_REPORTS_DIR, f"debug-{name}-{int(datetime.now().timestamp())}.png")
-        await page.screenshot(path=path)
-        print(f"📸 Debug screenshot saved: /reports/{os.path.basename(path)}")
-    except: pass
 
 def slugify(t):
     if not t: return ""
@@ -121,11 +107,7 @@ async def extract_prod_toc(page, base_url):
             toc.append({'title': item['text'], 'url': full_url})
             seen.add(full_url)
 
-    if len(toc) == 0:
-        print("   ⚠️ No topics found in Prod TOC. Taking debug screenshot...")
-        await debug_screenshot(page, "prod-failure")
-    else:
-        print(f"   ✅ Prod TOC: {len(toc)} topics found.")
+    print(f"   ✅ Prod TOC: {len(toc)} topics found.")
     return toc
 
 # ── Stage/Published TOC Extraction ───────────────────────────────────
@@ -156,11 +138,7 @@ async def extract_stage_toc(page, base_url):
             toc.append({'title': item['text'], 'url': full_url})
             seen.add(full_url)
 
-    if len(toc) == 0:
-        print("   ⚠️ No topics found in Stage TOC. Taking debug screenshot...")
-        await debug_screenshot(page, "stage-failure")
-    else:
-        print(f"   ✅ Stage TOC: {len(toc)} topics found.")
+    print(f"   ✅ Stage TOC: {len(toc)} topics found.")
     return toc
 
 # ── Main Validation ──────────────────────────────────────────────────
