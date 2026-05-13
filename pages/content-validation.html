@@ -107,16 +107,6 @@
       <p>Compare Publish vs Production TOC structure and URL parity</p>
     </div>
     <div style="display:flex; align-items:center; gap:15px;">
-<<<<<<< HEAD
-      <div id="backendSettingsBtn" style="cursor:pointer; font-size:20px; opacity:0.7; hover:opacity:1;" title="Backend Connection Settings">⚙️</div>
-      <div class="aem-status-badge disconnected" id="aemStatusBadge">
-        <div class="dot"></div>
-        <div class="badge-text">
-          <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
-          <span class="badge-sub" id="aemStatusSub">Checking…</span>
-        </div>
-      </div>
-=======
       <!-- AEM Status Badge (Hidden) -->
       <div id="aemStatus" class="aem-status" style="display: none;">
         <div id="aemStatusBadge" class="aem-status-badge disconnected"></div>
@@ -135,7 +125,6 @@
         </button>
         <button class="btn btn-primary" id="loginNavBtn" style="display: none;">Connect to AEM</button>
       </div>
->>>>>>> parent of f3e3ae6 (Automatic deployment)
     </div>
   </div>
 
@@ -177,14 +166,7 @@
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:2px solid #f0f0f0; padding-bottom:10px;">
-        <h2 style="margin:0; border:none; padding:0;">Configure Validation</h2>
-        <div style="display:flex; background:#f4f5f7; padding:4px; border-radius:8px; gap:4px;">
-          <button class="sheet-tab active" onclick="switchTab('toc')" id="tab-toc">TOC Parity</button>
-          <button class="sheet-tab" onclick="switchTab('deep')" id="tab-deep">Deep Content Validation</button>
-        </div>
-      </div>
-      
+      <h2>Configure URLs</h2>
       <div class="form-group">
         <label for="stageUrl">Publish URL</label>
         <input type="url" id="stageUrl" placeholder="https://documentation.avaya.com/bundle/..." />
@@ -196,7 +178,7 @@
         <div class="hint">Public production documentation URL</div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run TOC Validation</button>
+        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run Content Validation</button>
         <button class="btn btn-secondary" id="stopBtn" onclick="stopValidation()" style="display:none;">⏹ Stop</button>
       </div>
 
@@ -204,35 +186,17 @@
       
       <!-- Match Stats Section -->
       <div id="matchStatsContainer" style="display:none; margin-top:20px; padding:20px; background:#f8f9fa; border-radius:12px; border:1px solid #e0e0e0;">
-        <h3 id="statsTitle" style="font-size:16px; margin-bottom:15px; color:#232527; display:flex; align-items:center; gap:8px;">
-          📊 TOC Match Statistics
+        <h3 style="font-size:16px; margin-bottom:15px; color:#232527; display:flex; align-items:center; gap:8px;">
+          📊 Match Statistics
         </h3>
-        <div style="display:grid; grid-template-columns: 1fr; gap:15px;" id="statsGrid">
+        <div style="display:grid; grid-template-columns: 1fr; gap:15px;">
           <div class="stat-item">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; font-weight:600;">
-              <span id="label-overall">TOC Structure Match</span>
+              <span>TOC Structure Match</span>
               <span id="stat-overall">0%</span>
             </div>
             <div style="height:8px; background:#eee; border-radius:4px; overflow:hidden;">
               <div id="bar-overall" style="height:100%; width:0%; background:#da291c; transition:width 1s ease-out;"></div>
-            </div>
-          </div>
-          <div class="stat-item" id="stat-images-row" style="display:none;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; font-weight:600;">
-              <span>Images Parity Match</span>
-              <span id="stat-images">0%</span>
-            </div>
-            <div style="height:8px; background:#eee; border-radius:4px; overflow:hidden;">
-              <div id="bar-images" style="height:100%; width:0%; background:#2ecc71; transition:width 1s ease-out;"></div>
-            </div>
-          </div>
-          <div class="stat-item" id="stat-tables-row" style="display:none;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; font-weight:600;">
-              <span>Tables Parity Match</span>
-              <span id="stat-tables">0%</span>
-            </div>
-            <div style="height:8px; background:#eee; border-radius:4px; overflow:hidden;">
-              <div id="bar-tables" style="height:100%; width:0%; background:#3498db; transition:width 1s ease-out;"></div>
             </div>
           </div>
         </div>
@@ -308,24 +272,12 @@
 
   <script>
     // ── Backend URL Configuration ──
-<<<<<<< HEAD
-    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
-
-    // Fix initial download links if on GH Pages
-    if (API_BASE) {
-      document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
-        const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
-        a.href = API_BASE + path;
-      });
-=======
     let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
 
     // Auto-detect: If we are on GitHub Pages but API_BASE is localhost, 
     // it will likely fail due to Mixed Content. We'll handle this in the UI.
     if (window.location.hostname.includes('github.io') && API_BASE.includes('localhost')) {
        console.warn("Mixed Content Warning: Connecting to localhost from HTTPS GitHub Pages requires a tunnel or browser security bypass.");
->>>>>>> parent of f3e3ae6 (Automatic deployment)
     }
 
     // ── AEM Status ──────────────────────────────────────────
@@ -493,24 +445,6 @@
 
     let eventSource = null;
     let currentJobId = null;
-    let activeTab = 'toc';
-
-    function switchTab(tab) {
-      activeTab = tab;
-      document.getElementById('tab-toc').classList.toggle('active', tab === 'toc');
-      document.getElementById('tab-deep').classList.toggle('active', tab === 'deep');
-      
-      const runBtn = document.getElementById('runBtn');
-      if (tab === 'toc') {
-        runBtn.textContent = '▶ Run TOC Validation';
-      } else {
-        runBtn.textContent = '▶ Run Deep Content Validation';
-      }
-      
-      // Hide results if switching
-      document.getElementById('reportLink').style.display = 'none';
-      document.getElementById('matchStatsContainer').style.display = 'none';
-    }
 
     function runValidation() {
       const stageUrl = document.getElementById('stageUrl').value.trim();
@@ -543,15 +477,9 @@
           statusBadge.style.color = '#856404';
       }
 
-      if (activeTab === 'toc') {
-        status.innerHTML = '<span class="spinner"></span> Running TOC parity validation… This may take 2-4 minutes.';
-      } else {
-        status.innerHTML = '<span class="spinner"></span> Running Deep Content validation… This will check text, images, and tables for each topic. (First 50 topics)';
-      }
+      status.innerHTML = '<span class="spinner"></span> Running content parity validation… This may take 2-4 minutes.';
 
-      const endpoint = activeTab === 'toc' ? '/api/run/content-parity' : '/api/run/deep-content-validation';
-
-      fetch(`${API_BASE}${endpoint}`, {
+      fetch(`${API_BASE}/api/run/content-parity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage: stageUrl, production: prodUrl })
@@ -623,6 +551,7 @@
         };
       }).catch(err => {
         console.error('Validation error:', err);
+        let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
         status.className = 'status error';
         if (window.location.hostname.includes('github.io')) {
           status.innerHTML = `❌ <strong>Backend Unreachable</strong><br>
@@ -692,9 +621,7 @@
       btn.disabled = true;
       btn.textContent = '⏳ Loading Data...';
 
-      const endpoint = activeTab === 'toc' ? '/api/report-data/content-parity' : '/api/report-data/deep-content';
-      
-      fetch(`${API_BASE}${endpoint}`)
+      fetch(`${API_BASE}/api/report-data/content-parity`)
         .then(r => r.json())
         .then(data => {
           if (data.error) throw new Error(data.error);
@@ -753,43 +680,13 @@
 
     function renderMatchStats(results) {
       const container = document.getElementById('matchStatsContainer');
-      const statsTitle = document.getElementById('statsTitle');
-      const labelOverall = document.getElementById('label-overall');
-      
       container.style.display = 'block';
       
-      if (activeTab === 'toc') {
-        statsTitle.textContent = '📊 TOC Match Statistics';
-        labelOverall.textContent = 'TOC Structure Match';
-        document.getElementById('stat-images-row').style.display = 'none';
-        document.getElementById('stat-tables-row').style.display = 'none';
-      } else {
-        statsTitle.textContent = '📊 Deep Content Statistics (Average)';
-        labelOverall.textContent = 'Content Similarity';
-        document.getElementById('stat-images-row').style.display = 'block';
-        document.getElementById('stat-tables-row').style.display = 'block';
-      }
-
-      // Overall
       const val = results.overall ?? 0;
       document.getElementById('stat-overall').textContent = val + '%';
       setTimeout(() => {
         document.getElementById('bar-overall').style.width = val + '%';
       }, 100);
-      
-      // Deep metrics
-      if (results.images !== undefined) {
-        document.getElementById('stat-images').textContent = results.images + '%';
-        setTimeout(() => {
-          document.getElementById('bar-images').style.width = results.images + '%';
-        }, 200);
-      }
-      if (results.tables !== undefined) {
-        document.getElementById('stat-tables').textContent = results.tables + '%';
-        setTimeout(() => {
-          document.getElementById('bar-tables').style.width = results.tables + '%';
-        }, 300);
-      }
     }
 
     function showToast(message) {

@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Metadata Validation | Avaya Validation Dashboard</title>
-<<<<<<< HEAD
-=======
   <script>
     // AUTOMATIC REDIRECT TO LOCALHOST (Complete Fix for Mixed Content)
     if (window.location.hostname.includes('github.io')) {
@@ -13,7 +11,6 @@
       window.location.replace(localUrl);
     }
   </script>
->>>>>>> parent of f3e3ae6 (Automatic deployment)
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
@@ -178,13 +175,7 @@
   <div id="toast" class="toast"></div>
 
   <script>
-<<<<<<< HEAD
-    // ── Backend URL Configuration ──
-    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
-=======
     let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
->>>>>>> parent of f3e3ae6 (Automatic deployment)
 
     let uploadedFile = null;
     let currentJobId = null;
