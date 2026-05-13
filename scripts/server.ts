@@ -386,32 +386,34 @@ app.get('/api/logs/:jobId', (req, res) => {
   }
 
   // Stream new logs
-  const interval = setInterval(() => {
-    // Check for new logs since last send
-  }, 500);
-
   let lastIdx = job.logs.length;
+  let heartbeatCount = 0;
   const poller = setInterval(() => {
+    // Send heartbeat every 10 seconds to keep connection alive
+    heartbeatCount++;
+    if (heartbeatCount >= 20) { 
+      res.write(`: heartbeat\n\n`);
+      heartbeatCount = 0;
+    }
+
     while (lastIdx < job.logs.length) {
       res.write(`data: ${JSON.stringify({ type: 'log', data: job.logs[lastIdx] })}\n\n`);
       lastIdx++;
+      heartbeatCount = 0;
     }
     if (job.status === 'done') {
       res.write(`data: ${JSON.stringify({ type: 'done', summary: job.summary, reportFile: job.reportFile, results: job.results })}\n\n`);
       clearInterval(poller);
-      clearInterval(interval);
       res.end();
     } else if (job.status === 'error') {
       res.write(`data: ${JSON.stringify({ type: 'error', data: job.summary })}\n\n`);
       clearInterval(poller);
-      clearInterval(interval);
       res.end();
     }
-  }, 300);
+  }, 500);
 
   req.on('close', () => {
     clearInterval(poller);
-    clearInterval(interval);
   });
 });
 
