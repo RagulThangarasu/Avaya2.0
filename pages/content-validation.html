@@ -501,8 +501,13 @@
           eventSource.close();
         };
       }).catch(err => {
-        status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
-        status.textContent = '❌ Failed to start: ' + err.message;
+        console.error('Validation error:', err);
+        status.className = 'status error';
+        if (window.location.hostname.includes('github.io')) {
+          status.innerHTML = '❌ <strong>Local Server Not Detected</strong><br>This tool requires the local backend server to be running. Please run <code>npm run server</code> on your machine.';
+        } else {
+          status.textContent = '❌ Failed to start: ' + err.message;
+        }
         runBtn.disabled = false;
         stopBtn.style.display = 'none';
       });
