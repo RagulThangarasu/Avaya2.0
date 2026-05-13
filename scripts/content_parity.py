@@ -14,8 +14,6 @@ UI_REPORTS_DIR = os.path.join(os.getcwd(), '.ui_reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(UI_REPORTS_DIR, exist_ok=True)
 
-# Load URLs
-TEST_URLS_PATH = os.path.join(os.getcwd(), 'config', 'test-urls.json')
 AUTH_STATE_PATH = os.path.join(os.getcwd(), 'auth-sessions', 'storage-state.json')
 
 STAGE_URL = os.environ.get('STAGE_URL')
@@ -26,17 +24,9 @@ if not STAGE_URL or not PROD_URL:
     try:
         with open(TEST_URLS_PATH, 'r') as f:
             config = json.load(f)
-            STAGE_URL = STAGE_URL or config.get('stage')
-            PROD_URL = PROD_URL or config.get('production')
+            STAGE_URL = config.get('stage')
+            PROD_URL = config.get('production')
     except: pass
-
-if not STAGE_URL or not PROD_URL:
-    print("❌ Error: Missing URLs.")
-    sys.exit(1)
-
-def slugify(t):
-    if not t: return ""
-    return re.sub(r'[^a-z0-9]', '', t.lower())
 
 def get_filename(url):
     if not url: return ""
@@ -56,57 +46,50 @@ async def handle_cookies(page):
         }''')
     except: pass
 
-async def extract_prod_toc(page, base_url):
+async def senior_toc_extraction(page, base_url, is_prod=True):
     await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
     await handle_cookies(page)
     
-    # Expand all
-    try:
-        await page.evaluate('''() => {
-            const btns = document.querySelectorAll('.zDocsCollapseExpandButton');
-            if (btns.length > 0) btns[0].click();
-        }''')
-        await page.wait_for_timeout(3000)
-    except: pass
+    if is_prod:
+        try:
+            await page.evaluate('''async () => {
+                const sleep = m => new Promise(r => setTimeout(r, m));
+                const rootBtn = document.querySelector('.zDocsCollapseExpandButton');
+                if (rootBtn) rootBtn.click();
+                await sleep(2000);
+                for (let i = 0; i < 3; i++) {
+                    const collapsed = document.querySelectorAll('.zDocsTocItemCollapsed .zDocsTocItemToggle');
+                    if (collapsed.length === 0) break;
+                    collapsed.forEach(btn => btn.click());
+                    await sleep(1500);
+                }
+            }''')
+        except: pass
 
-    # Scroll-and-Collect for Virtualized TOC
     links = await page.evaluate('''async () => {
-        const container = document.querySelector('ul.zDocsTocList') || document.body;
-        const seen = new Set();
+        const sleep = m => new Promise(r => setTimeout(r, m));
+        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
         const results = [];
+        const seen = new Set();
         let lastHeight = 0, scrollCount = 0;
-        while (scrollCount < 60) {
+        while (scrollCount < 80) {
             container.querySelectorAll('a[href]').forEach(a => {
                 const href = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
-                if (href && !seen.has(href) && !href.startsWith('javascript')) {
+                const text = a.innerText.trim();
+                if (href && text && !seen.has(href) && !href.startsWith('javascript')) {
                     seen.add(href);
-                    results.push({text: a.innerText.trim(), url: href});
+                    results.push({text, url: href});
                 }
             });
-            container.scrollTop += 800;
-            await new Promise(r => setTimeout(r, 400));
+            container.scrollTop += 600;
+            await sleep(400);
             if (container.scrollTop === lastHeight) break;
             lastHeight = container.scrollTop;
             scrollCount++;
         }
         return results;
     }''')
-    return [{'title': l['text'], 'url': l['url']} for l in links]
-
-async def extract_stage_toc(page, base_url):
-    await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
-    await handle_cookies(page)
-    await page.wait_for_timeout(2000)
-    
-    links = await page.evaluate('''() => {
-        const results = [];
-        document.querySelectorAll('.cmp-navigation__item-link').forEach(a => {
-            const url = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
-            results.push({text: a.innerText.trim(), url: url});
-        });
-        return results;
-    }''')
-    return [{'title': l['text'], 'url': l['url']} for l in links]
+    return [{'title': l['text'], 'url': l['url']} for l in links if '.html' in l['url'] or '/page/' in l['url']]
 
 async def run_validation():
     async with async_playwright() as p:
@@ -116,56 +99,34 @@ async def run_validation():
 
         p1, p2 = await s_ctx.new_page(), await p_ctx.new_page()
         print("🔍 Scanning Navigation Structure (Parallel)...")
-        stage_toc, prod_toc = await asyncio.gather(extract_stage_toc(p1, STAGE_URL), extract_prod_toc(p2, PROD_URL))
+        stage_toc, prod_toc = await asyncio.gather(senior_toc_extraction(p1, STAGE_URL, False), senior_toc_extraction(p2, PROD_URL, True))
         await browser.close()
 
-        print(f"📊 Comparing: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
-
-        if not prod_toc:
-            print("⚠️ Production TOC is empty.")
-            print(f"::RESULTS::{json.dumps({'overall': 0, 'content': 0})}")
-            return
+        print(f"📊 Results: Prod={len(prod_toc)} topics vs Stage={len(stage_toc)} topics")
 
         s_map = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
         comparison = []
-
         for i, p_item in enumerate(prod_toc):
             fn = get_filename(p_item['url'])
             matched_s = s_map.get(fn)
-            
-            match = "NO"
-            if matched_s:
-                if slugify(p_item['title']) == slugify(matched_s['title']): match = "YES"
-                else: match = "FILENAME_MATCH"
-
             comparison.append({
                 'Order': i + 1,
                 'Prod Topic': p_item['title'],
                 'Stage Topic': matched_s['title'] if matched_s else '[MISSING]',
-                'Match': match,
+                'Match': 'YES' if matched_s else 'NO',
                 'Prod URL': p_item['url'],
                 'Stage URL': matched_s['url'] if matched_s else 'N/A'
             })
 
         df = pd.DataFrame(comparison)
-        matched_count = len(df[df['Match'].isin(['YES', 'FILENAME_MATCH'])])
-        total = len(df)
-        pct = int(matched_count/total*100) if total else 0
+        pct = int(len(df[df['Match'] == 'YES'])/len(df)*100) if not df.empty else 0
 
-        summary = [
-            ['Content Parity Summary'],
-            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            ['Prod Topics', len(prod_toc)],
-            ['Stage Topics', len(stage_toc)],
-            ['Match Percentage', f"{pct}%"]
-        ]
-        
         with pd.ExcelWriter(REPORT_FILENAME) as writer:
-            pd.DataFrame(summary).to_excel(writer, sheet_name='Summary', header=False, index=False)
-            df.to_excel(writer, sheet_name='TOC Parity', index=False)
+            pd.DataFrame([['TOC Parity Audit'], ['Date', datetime.now().strftime('%Y-%m-%d')], ['Match Rate', f"{pct}%"]]).to_excel(writer, sheet_name='Summary', header=False, index=False)
+            df.to_excel(writer, sheet_name='Audit Details', index=False)
 
         print(f"::RESULTS::{json.dumps({'overall': pct, 'content': pct})}")
-        print(f"✅ TOC Validation complete: {REPORT_FILENAME}")
+        print(f"✅ Audit Complete: {REPORT_FILENAME}")
 
 if __name__ == "__main__":
     asyncio.run(run_validation())
