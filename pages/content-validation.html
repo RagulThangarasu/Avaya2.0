@@ -4,13 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Content Parity Validation</title>
-  <script>
-    // AUTOMATIC REDIRECT TO LOCALHOST (Complete Fix for Mixed Content)
-    if (window.location.hostname.includes('github.io')) {
-      const localUrl = window.location.href.replace('https://ragulthangarasu.github.io/Avaya2.0', 'http://localhost:3000');
-      window.location.replace(localUrl);
-    }
-  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
@@ -107,8 +100,8 @@
       <p>Compare Publish vs Production TOC structure and URL parity</p>
     </div>
     <div style="display:flex; align-items:center; gap:15px;">
-      <!-- AEM Status Badge (Hidden) -->
-      <div id="aemStatus" class="aem-status" style="display: none;">
+      <!-- AEM Status Badge -->
+      <div id="aemStatus" class="aem-status">
         <div id="aemStatusBadge" class="aem-status-badge disconnected"></div>
         <div class="aem-status-text">
           <div id="aemStatusTitle" class="aem-status-title">AEM Disconnected</div>
@@ -116,14 +109,9 @@
       </div>
 
       <div class="header-actions">
-        <!-- Settings (Hidden) -->
-        <button class="icon-btn" id="backendSettingsBtn" title="Backend Settings" style="display: none;">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-        </button>
-        <button class="btn btn-primary" id="loginNavBtn" style="display: none;">Connect to AEM</button>
+        <!-- Settings Gear -->
+        <button class="icon-btn" id="backendSettingsBtn" title="Backend Connection Settings">⚙️</button>
+        <button class="btn btn-primary" id="loginNavBtn">Connect to AEM</button>
       </div>
     </div>
   </div>
@@ -272,12 +260,16 @@
 
   <script>
     // ── Backend URL Configuration ──
-    let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
+    // ── Backend URL Configuration ──
+    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : (localStorage.getItem('backend_api_url') || 'http://localhost:3000');
 
-    // Auto-detect: If we are on GitHub Pages but API_BASE is localhost, 
-    // it will likely fail due to Mixed Content. We'll handle this in the UI.
-    if (window.location.hostname.includes('github.io') && API_BASE.includes('localhost')) {
-       console.warn("Mixed Content Warning: Connecting to localhost from HTTPS GitHub Pages requires a tunnel or browser security bypass.");
+    // Fix initial download links if on GH Pages
+    if (API_BASE.includes('://')) {
+      document.querySelectorAll('a[href^="api/"], a[href^="/api/"]').forEach(a => {
+        const path = a.getAttribute('href').startsWith('/') ? a.getAttribute('href') : '/' + a.getAttribute('href');
+        a.href = API_BASE + path;
+      });
     }
 
     // ── AEM Status ──────────────────────────────────────────

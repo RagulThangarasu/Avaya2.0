@@ -5,12 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Metadata Validation | Avaya Validation Dashboard</title>
   <script>
-    // AUTOMATIC REDIRECT TO LOCALHOST (Complete Fix for Mixed Content)
-    if (window.location.hostname.includes('github.io')) {
-      const localUrl = window.location.href.replace('https://ragulthangarasu.github.io/Avaya2.0', 'http://localhost:3000');
-      window.location.replace(localUrl);
-    }
-  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
@@ -73,7 +67,7 @@
       <h1>🏷️ Metadata Validation</h1>
       <p>Validate AEM Publication Metadata against master CSV specifications</p>
     </div>
-    <div style="display:none; align-items:center; gap:15px;">
+    <div style="display:flex; align-items:center; gap:15px;">
       <div id="backendSettingsBtn" style="cursor:pointer; font-size:20px; opacity:0.7;" title="Backend Connection Settings">⚙️</div>
       <div class="aem-status-badge disconnected" id="aemStatusBadge">
         <div class="dot"></div>
@@ -175,7 +169,9 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
+    // ── Backend URL Configuration ──
+    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : (localStorage.getItem('backend_api_url') || 'http://localhost:3000');
 
     let uploadedFile = null;
     let currentJobId = null;
