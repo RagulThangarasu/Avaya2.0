@@ -135,15 +135,11 @@
   </div>
 
   <script>
-    // ── GitHub Pages → Localhost Auto-Redirect ──
-    // GitHub Pages (HTTPS) cannot talk to localhost (HTTP) due to browser security.
-    // The only fix is to redirect the user to their local server.
-    if (window.location.hostname.includes('github.io')) {
-      const localUrl = 'http://localhost:3000/' + window.location.pathname.split('/').pop();
-      window.location.replace(localUrl);
-    }
-
-    let API_BASE = '';
+    // ── Backend URL Configuration ──
+    // When on GitHub Pages, connect to the Render-hosted backend.
+    // When running locally, connect to localhost.
+    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
 
     // AEM Status
     function updateAemStatus() {

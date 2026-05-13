@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: avaya-validation
+    runtime: docker
+    plan: free
+    repo: https://github.com/RagulThangarasu/Avaya2.0
+    branch: main
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production

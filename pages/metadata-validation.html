@@ -168,13 +168,10 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    // ── GitHub Pages → Localhost Auto-Redirect ──
-    if (window.location.hostname.includes('github.io')) {
-      const localUrl = 'http://localhost:3000/' + window.location.pathname.split('/').pop();
-      window.location.replace(localUrl);
-    }
+    // ── Backend URL Configuration ──
+    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
+    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
 
-    let API_BASE = '';
     let uploadedFile = null;
     let currentJobId = null;
 

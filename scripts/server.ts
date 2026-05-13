@@ -18,7 +18,7 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 const ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(ROOT, 'config/test-urls.json');
@@ -31,9 +31,10 @@ const CSV_DIR = path.join(ROOT, '.temp_csv');
 if (!fs.existsSync(UI_REPORTS_DIR)) fs.mkdirSync(UI_REPORTS_DIR, { recursive: true });
 if (!fs.existsSync(CSV_DIR)) fs.mkdirSync(CSV_DIR, { recursive: true });
 
-if (!fs.existsSync(UI_REPORTS_DIR)) fs.mkdirSync(UI_REPORTS_DIR, { recursive: true });
-
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://ragulthangarasu.github.io'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.static(PAGES_DIR));
 
