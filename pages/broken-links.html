@@ -135,11 +135,7 @@
   </div>
 
   <script>
-    // ── Backend URL Configuration ──
-    // When on GitHub Pages, connect to the Render-hosted backend.
-    // When running locally, connect to localhost.
-    const RENDER_BACKEND_URL = 'https://avaya-validation.onrender.com';
-    let API_BASE = window.location.hostname.includes('github.io') ? RENDER_BACKEND_URL : '';
+    let API_BASE = localStorage.getItem('backend_api_url') || 'http://localhost:3000';
 
     // AEM Status
     function updateAemStatus() {
