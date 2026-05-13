@@ -37,6 +37,13 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.static(PAGES_DIR));
+app.use('/reports', express.static(UI_REPORTS_DIR));
+
+// Log external IP for whitelisting help
+import { exec } from 'child_process';
+exec('curl -s https://ifconfig.me', (err, stdout) => {
+  if (!err) console.log(`🌍 Server External IP: ${stdout.trim()}`);
+});
 
 // Multer for PDF uploads
 const upload = multer({
