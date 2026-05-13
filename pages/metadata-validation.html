@@ -66,11 +66,34 @@
       <h1>🏷️ Metadata Validation</h1>
       <p>Validate AEM Publication Metadata against master CSV specifications</p>
     </div>
-    <div class="aem-status-badge disconnected" id="aemStatusBadge">
-      <div class="dot"></div>
-      <div class="badge-text">
-        <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
-        <span class="badge-sub" id="aemStatusSub">Checking…</span>
+    <div style="display:flex; align-items:center; gap:15px;">
+      <div id="backendSettingsBtn" style="cursor:pointer; font-size:20px; opacity:0.7;" title="Backend Connection Settings">⚙️</div>
+      <div class="aem-status-badge disconnected" id="aemStatusBadge">
+        <div class="dot"></div>
+        <div class="badge-text">
+          <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
+          <span class="badge-sub" id="aemStatusSub">Checking…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backend Settings Modal -->
+  <div id="settingsModal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="modal-content" style="background:white; padding:25px; border-radius:12px; width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.2); border-top:4px solid #da291c;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+        <h2 style="color:#232527; font-size:18px; margin:0;">🌐 Backend Connection</h2>
+        <button onclick="closeSettingsModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#999;">&times;</button>
+      </div>
+      <p style="font-size:13px; color:#666; margin-bottom:15px;">If you are using GitHub Pages, you may need an <strong>HTTPS</strong> tunnel (like <code>ngrok</code>) to bypass Mixed Content blocks.</p>
+      <div class="form-group" style="margin-bottom:15px;">
+        <label style="display:block; font-weight:600; margin-bottom:5px; font-size:14px;">Backend API URL</label>
+        <input type="text" id="apiBaseInput" placeholder="http://localhost:3000" style="width:100%; padding:10px; border:2px solid #ddd; border-radius:8px;">
+        <div style="font-size:11px; color:#888; margin-top:5px;">Leave empty to use default local server.</div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button class="btn" onclick="closeSettingsModal()" style="background:#f0f0f0;">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Save & Reload</button>
       </div>
     </div>
   </div>
@@ -145,7 +168,26 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+    // -- API Base Detection & Persistent Settings --
+    let API_BASE = localStorage.getItem('backend_api_url') || (window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '');
+    
+    document.getElementById('backendSettingsBtn').onclick = () => {
+      document.getElementById('apiBaseInput').value = API_BASE || 'http://localhost:3000';
+      document.getElementById('settingsModal').style.display = 'flex';
+    };
+    function closeSettingsModal() { document.getElementById('settingsModal').style.display = 'none'; }
+    function saveSettings() {
+      const val = document.getElementById('apiBaseInput').value.trim();
+      if (val) {
+        API_BASE = val.endsWith('/') ? val.slice(0, -1) : val;
+        localStorage.setItem('backend_api_url', API_BASE);
+      } else {
+        localStorage.removeItem('backend_api_url');
+        API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+      }
+      location.reload();
+    }
+
     let uploadedFile = null;
     let currentJobId = null;
 
@@ -227,6 +269,9 @@
 
       } catch (err) {
         logOutput.innerHTML += `\n❌ Error: ${err.message}\n`;
+        if (window.location.hostname.includes('github.io')) {
+          logOutput.innerHTML += `\n💡 <strong>Backend Unreachable:</strong> GitHub Pages (HTTPS) cannot talk to Localhost (HTTP). <br><a href="http://localhost:3000/metadata-validation.html" style="color:#da291c; font-weight:bold;">Switch to Local Dashboard 🚀</a>\n`;
+        }
         runBtn.disabled = false;
         runBtn.innerText = '▶ Start Metadata Validation';
       }
