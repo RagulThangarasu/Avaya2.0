@@ -332,9 +332,11 @@
   </div>
 
   <script>
+    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+
     // -- AEM Status --
     function updateAemStatus() {
-      fetch('/api/aem-status')
+      fetch(`${API_BASE}/api/aem-status`)
         .then(r => r.json())
         .then(data => {
           const badge = document.getElementById('aemStatusBadge');
@@ -501,7 +503,7 @@
       formData.append('env', env);
       formData.append('pdf', file);
 
-      fetch('/api/upload-pdf', { method: 'POST', body: formData })
+      fetch(`${API_BASE}/api/upload-pdf`, { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
           if (data.error) {
@@ -547,7 +549,7 @@
     });
 
     function loadFileList() {
-      fetch('/api/pdf-files')
+      fetch(`${API_BASE}/api/pdf-files`)
         .then(r => r.json())
         .then(data => {
           const fileList = document.getElementById('fileList');
@@ -592,7 +594,7 @@
 
       status.innerHTML = '<span class="spinner"></span> Running PDF validation…';
 
-      fetch('/api/run/pdf-validation', {
+      fetch(`${API_BASE}/api/run/pdf-validation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -610,7 +612,7 @@
           return;
         }
         currentJobId = data.jobId;
-        eventSource = new EventSource('/api/logs/' + data.jobId);
+        eventSource = new EventSource(`${API_BASE}/api/logs/${data.jobId}`);
         eventSource.onmessage = function(e) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'log') {
@@ -623,7 +625,7 @@
             // Update download link
             if (msg.reportFile) {
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
-              downloadBtn.href = '/api/download/' + msg.reportFile;
+              downloadBtn.href = `${API_BASE}/api/download/${msg.reportFile}`;
               downloadBtn.download = msg.reportFile;
             }
 
@@ -636,7 +638,7 @@
             
             // Auto-download the Excel report
             if (msg.reportFile) {
-              const downloadUrl = `/api/download/${msg.reportFile}`;
+              const downloadUrl = `${API_BASE}/api/download/${msg.reportFile}`;
               const a = document.createElement('a');
               a.href = downloadUrl;
               a.download = msg.reportFile;
@@ -683,7 +685,7 @@
 
     function stopValidation() {
       if (eventSource) eventSource.close();
-      fetch('/api/stop', { 
+      fetch(`${API_BASE}/api/stop`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: currentJobId })
@@ -701,7 +703,7 @@
       btn.textContent = '⏳ Generating PDF...';
       statusEl.textContent = 'This may take 10-30 seconds...';
 
-      fetch('/api/generate-pdf/pdf-validation')
+      fetch(`${API_BASE}/api/generate-pdf/pdf-validation`)
         .then(r => {
           if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Failed'); });
           return r.blob();
@@ -734,7 +736,7 @@
       btn.disabled = true;
       btn.textContent = '⏳ Loading Data...';
 
-      fetch('/api/report-data/pdf-validation')
+      fetch(`${API_BASE}/api/report-data/pdf-validation`)
         .then(r => r.json())
         .then(data => {
           if (data.error) throw new Error(data.error);

@@ -231,9 +231,11 @@
   </div>
 
   <script>
+    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+
     // ── AEM Status ──────────────────────────────────────────
     function updateAemStatus() {
-      fetch('/api/aem-status')
+      fetch(`${API_BASE}/api/aem-status`)
         .then(r => r.json())
         .then(data => {
           const badge = document.getElementById('aemStatusBadge');
@@ -257,7 +259,7 @@
     }
     updateAemStatus();
     function checkExistingReport() {
-      fetch('/api/reports')
+      fetch(`${API_BASE}/api/reports`)
         .then(r => r.json())
         .then(files => {
           const reportExists = files.some(f => f.name === 'content-parity.xlsx');
@@ -331,14 +333,14 @@
       statusEl.className = 'status running';
       statusEl.innerHTML = '<span class="spinner"></span> Waiting for manual login... Check browser window.';
       
-      fetch('/api/login', {
+      fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, username: user, password: pass })
       }).then(r => r.json()).then(data => {
         if (data.error) throw new Error(data.error);
         
-        const source = new EventSource('/api/logs/' + data.jobId);
+        const source = new EventSource(`${API_BASE}/api/logs/${data.jobId}`);
         source.onmessage = function(e) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'done') {
@@ -374,7 +376,7 @@
     function disconnectAem() {
       if (!confirm('Are you sure you want to disconnect from AEM? This will clear your session.')) return;
       
-      fetch('/api/logout', { method: 'POST' })
+      fetch(`${API_BASE}/api/logout`, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
           if (data.error) throw new Error(data.error);
@@ -430,7 +432,7 @@
 
       status.innerHTML = '<span class="spinner"></span> Running content parity validation… This may take 2-4 minutes.';
 
-      fetch('/api/run/content-parity', {
+      fetch(`${API_BASE}/api/run/content-parity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage: stageUrl, production: prodUrl })
@@ -457,7 +459,7 @@
             // Update download link
             if (msg.reportFile) {
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
-              downloadBtn.href = '/api/download/' + msg.reportFile;
+              downloadBtn.href = `${API_BASE}/api/download/${msg.reportFile}`;
               downloadBtn.download = msg.reportFile;
             }
             
@@ -470,7 +472,7 @@
             
             // Auto-download the Excel report
             if (msg.reportFile) {
-              const downloadUrl = `/api/download/${msg.reportFile}`;
+              const downloadUrl = `${API_BASE}/api/download/${msg.reportFile}`;
               const a = document.createElement('a');
               a.href = downloadUrl;
               a.download = msg.reportFile;
@@ -515,7 +517,7 @@
 
     function stopValidation() {
       if (eventSource) eventSource.close();
-      fetch('/api/stop', { 
+      fetch(`${API_BASE}/api/stop`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: currentJobId })

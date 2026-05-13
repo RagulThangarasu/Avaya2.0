@@ -145,13 +145,14 @@
   <div id="toast" class="toast"></div>
 
   <script>
+    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
     let uploadedFile = null;
     let currentJobId = null;
 
     // AEM Status Check
     async function checkAemStatus() {
       try {
-        const resp = await fetch('/api/aem-status');
+        const resp = await fetch(`${API_BASE}/api/aem-status`);
         const data = await resp.json();
         const badge = document.getElementById('aemStatusBadge');
         const title = document.getElementById('aemStatusTitle');
@@ -201,7 +202,7 @@
         logOutput.innerHTML += '> Uploading CSV file...\n';
         const formData = new FormData();
         formData.append('csv', uploadedFile);
-        const uploadResp = await fetch('/api/upload-csv', { method: 'POST', body: formData });
+        const uploadResp = await fetch(`${API_BASE}/api/upload-csv`, { method: 'POST', body: formData });
         
         if (!uploadResp.ok) {
           const errorText = await uploadResp.text();
@@ -213,7 +214,7 @@
 
         // 2. Start Test
         logOutput.innerHTML += '> Triggering metadata validation test...\n';
-        const testResp = await fetch('/api/run/metadata-validation', {
+        const testResp = await fetch(`${API_BASE}/api/run/metadata-validation`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ stageUrl, csvPath: uploadResult.path })
@@ -232,7 +233,7 @@
     }
 
     function listenToLogs(jobId) {
-      const eventSource = new EventSource(`/api/logs/${jobId}`);
+      const eventSource = new EventSource(`${API_BASE}/api/logs/${jobId}`);
       const logOutput = document.getElementById('logOutput');
       const runBtn = document.getElementById('runBtn');
 
@@ -249,7 +250,7 @@
           runBtn.innerText = '▶ Start Metadata Validation';
           
           document.getElementById('reportLink').style.display = 'block';
-          const downloadUrl = `/api/download/metadata-validation-report.xlsx?jobId=${jobId}`;
+          const downloadUrl = `${API_BASE}/api/download/metadata-validation-report.xlsx?jobId=${jobId}`;
           document.getElementById('xlsxDownloadBtn').href = downloadUrl;
           
           // AUTO-DOWNLOAD

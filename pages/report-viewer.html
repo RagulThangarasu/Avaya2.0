@@ -202,8 +202,9 @@
         }
 
         async function fetchData() {
+            const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
             try {
-                const url = jobId ? `/api/report-data/${reportType}?jobId=${jobId}` : `/api/report-data/${reportType}`;
+                const url = jobId ? `${API_BASE}/api/report-data/${reportType}?jobId=${jobId}` : `${API_BASE}/api/report-data/${reportType}`;
                 const resp = await fetch(url);
                 const data = await resp.json();
                 
@@ -230,7 +231,8 @@
                 
                 // If we have a specific jobId, we should ideally download that one
                 // But the API currently fallbacks to latest if file not found
-                window.location.href = `/api/download/${downloadFilename}`;
+                const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+                window.location.href = `${API_BASE}/api/download/${downloadFilename}`;
             };
 
             const tabContainer = document.getElementById('sheetTabs');

@@ -112,9 +112,11 @@
   </div>
 
   <script>
+    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:3000' : '';
+
     // AEM Status
     function updateAemStatus() {
-      fetch('/api/aem-status')
+      fetch(`${API_BASE}/api/aem-status`)
         .then(r => r.json())
         .then(data => {
           const badge = document.getElementById('aemStatusBadge');
@@ -155,7 +157,7 @@
       status.className = 'status running';
       status.innerHTML = '<span class="spinner"></span> Crawling topics and checking links... This may take several minutes depending on the bundle size.';
 
-      fetch('/api/run/broken-links', {
+      fetch(`${API_BASE}/api/run/broken-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -169,16 +171,15 @@
         }
 
         currentJobId = data.jobId;
-        eventSource = new EventSource('/api/logs/' + data.jobId);
+        eventSource = new EventSource(`${API_BASE}/api/logs/${data.jobId}`);
         eventSource.onmessage = function(e) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'log') {
             logOutput.textContent += msg.data + '\n';
             logOutput.scrollTop = logOutput.scrollHeight;
           } else if (msg.type === 'done') {
-            status.className = 'status success';
             status.textContent = '✅ Crawl complete! Broken links identified.';
-            document.getElementById('xlsxDownloadBtn').href = '/api/download/' + msg.reportFile;
+            document.getElementById('xlsxDownloadBtn').href = `${API_BASE}/api/download/${msg.reportFile}`;
             reportLink.style.display = 'block';
             runBtn.disabled = false;
             stopBtn.style.display = 'none';
@@ -187,7 +188,7 @@
             // Auto-download after a small delay to ensure file is flushed
             setTimeout(() => {
               const a = document.createElement('a');
-              a.href = '/api/download/' + msg.reportFile;
+              a.href = `${API_BASE}/api/download/${msg.reportFile}`;
               a.download = msg.reportFile;
               document.body.appendChild(a);
               a.click();
@@ -222,7 +223,7 @@
       stopBtn.disabled = true;
       stopBtn.textContent = 'Stopping...';
 
-      fetch('/api/stop', {
+      fetch(`${API_BASE}/api/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: currentJobId })
