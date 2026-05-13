@@ -100,13 +100,23 @@
       <p>Compare Publish vs Production TOC structure and URL parity</p>
     </div>
     <div style="display:flex; align-items:center; gap:15px;">
-      <div id="backendSettingsBtn" style="cursor:pointer; font-size:20px; opacity:0.7; hover:opacity:1;" title="Backend Connection Settings">⚙️</div>
-      <div class="aem-status-badge disconnected" id="aemStatusBadge">
-        <div class="dot"></div>
-        <div class="badge-text">
-          <span class="badge-title" id="aemStatusTitle">AEM Disconnected</span>
-          <span class="badge-sub" id="aemStatusSub">Checking…</span>
+      <!-- AEM Status Badge (Hidden) -->
+      <div id="aemStatus" class="aem-status" style="display: none;">
+        <div id="aemStatusBadge" class="aem-status-badge disconnected"></div>
+        <div class="aem-status-text">
+          <div id="aemStatusTitle" class="aem-status-title">AEM Disconnected</div>
         </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Settings (Hidden) -->
+        <button class="icon-btn" id="backendSettingsBtn" title="Backend Settings" style="display: none;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-primary" id="loginNavBtn" style="display: none;">Connect to AEM</button>
       </div>
     </div>
   </div>
