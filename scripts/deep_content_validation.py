@@ -307,11 +307,14 @@ async def validate_content():
         # Build URL mapping
         print(f"\n📊 Matching TOC: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
         
+        # Build URL mapping with support for duplicate filenames (store list of items per filename)
         stage_by_filename = {}
-        for item in stage_toc:
+        for idx, item in enumerate(stage_toc):
             fn = get_filename(item['url'])
             if fn:
-                stage_by_filename[fn] = item
+                if fn not in stage_by_filename:
+                    stage_by_filename[fn] = []
+                stage_by_filename[fn].append({**item, 'index': idx + 1, 'used': False})
         
         # Parallel validation function
         async def validate_single_page(prod_item, idx, total):
@@ -319,19 +322,28 @@ async def validate_content():
             prod_url = prod_item['url']
             prod_fn = get_filename(prod_url)
             
-            # Find matching stage URL
+            # Find matching stage URL (pick first unused item with same filename)
             stage_url = None
-            matched_stage = stage_by_filename.get(prod_fn)
-            if matched_stage:
-                stage_url = matched_stage['url']
+            matched_stage = None
+            candidates = stage_by_filename.get(prod_fn, [])
+            for cand in candidates:
+                if not cand['used']:
+                    matched_stage = cand
+                    cand['used'] = True
+                    stage_url = cand['url']
+                    break
             
             if not stage_url:
+                # Missing in stage
                 result = {
                     'Stage Title': 'N/A',
                     'Prod Title': prod_item['title'],
                     'Stage URL': 'N/A',
                     'Prod URL': prod_url,
-                    'Match Type': 'MISSING_IN_STAGE',
+                    'Prod Sequence': idx,
+                    'Stage Sequence': 'N/A',
+                    'Sequence Match': '❌ No',
+                    'Match Type': 'MISMATCH',
                     'Similarity': '0%',
                     'Stage Word Count': 0,
                     'Prod Word Count': 0,
@@ -341,7 +353,7 @@ async def validate_content():
                     'Sample Extra Terms': '',
                     'Status': 'FAILED'
                 }
-                return 'error', result
+                return 'mismatch', result
             
             try:
                 # Create new pages for this validation
@@ -360,6 +372,9 @@ async def validate_content():
                         'Prod Title': prod_data.get('title', 'Error'),
                         'Stage URL': stage_url,
                         'Prod URL': prod_url,
+                        'Prod Sequence': idx,
+                        'Stage Sequence': matched_stage['index'],
+                        'Sequence Match': '✅ Yes' if idx == matched_stage['index'] else f'❌ No (Prod:{idx} vs Stage:{matched_stage["index"]})',
                         'Match Type': 'ERROR',
                         'Similarity': '0%',
                         'Stage Word Count': 0,
@@ -374,7 +389,9 @@ async def validate_content():
                 
                 # Compare
                 comparison = compare_page_content(stage_data['text'], prod_data['text'])
-                match_type = comparison['match_type']
+                # Force to Match/Mismatch
+                is_match = comparison['match_type'] == 'match' and idx == matched_stage['index']
+                match_type = 'MATCH' if is_match else 'MISMATCH'
                 similarity = comparison['similarity']
                 
                 result = {
@@ -382,7 +399,10 @@ async def validate_content():
                     'Prod Title': prod_data['title'],
                     'Stage URL': stage_url,
                     'Prod URL': prod_url,
-                    'Match Type': match_type.upper(),
+                    'Prod Sequence': idx,
+                    'Stage Sequence': matched_stage['index'],
+                    'Sequence Match': '✅ Yes' if idx == matched_stage['index'] else '❌ No',
+                    'Match Type': match_type,
                     'Similarity': f"{similarity * 100:.1f}%",
                     'Stage Word Count': comparison.get('stage_words', 0),
                     'Prod Word Count': comparison.get('prod_words', 0),
@@ -390,13 +410,13 @@ async def validate_content():
                     'Extra in Prod': comparison.get('extra_in_prod_count', 0),
                     'Sample Missing Terms': comparison.get('missing_sample', ''),
                     'Sample Extra Terms': comparison.get('extra_sample', ''),
-                    'Status': 'OK'
+                    'Status': 'OK' if is_match else 'FAILED'
                 }
                 
-                emoji = '✅' if match_type == 'match' else '⚠️' if match_type == 'partial' else '❌'
-                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} {emoji} {match_type.upper()} ({similarity*100:.0f}%)")
+                emoji = '✅' if is_match else '❌'
+                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} {emoji} {match_type} ({similarity*100:.0f}%)")
                 
-                return match_type, result
+                return 'match' if is_match else 'mismatch', result
                 
             except Exception as e:
                 print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} 🚨 EXCEPTION")
@@ -405,6 +425,9 @@ async def validate_content():
                     'Prod Title': prod_item['title'],
                     'Stage URL': stage_url or 'N/A',
                     'Prod URL': prod_url,
+                    'Prod Sequence': idx,
+                    'Stage Sequence': matched_stage['index'] if matched_stage else 'N/A',
+                    'Sequence Match': '❌ No',
                     'Match Type': 'ERROR',
                     'Similarity': '0%',
                     'Stage Word Count': 0,
@@ -435,23 +458,47 @@ async def validate_content():
             batch_results = await asyncio.gather(*tasks)
             
             for match_type, result in batch_results:
-                match_stats[match_type] += 1
-                results.append(result)
+                if match_type != 'ignore':
+                    match_stats[match_type] += 1
+                    results.append(result)
+        
+        # Add items that exist in Stage but NOT in Prod (Extra items)
+        print(f"\n➕ Checking for extra items in Stage...")
+        for fn, candidates in stage_by_filename.items():
+            for cand in candidates:
+                if not cand['used']:
+                    result = {
+                        'Stage Title': cand['title'],
+                        'Prod Title': 'N/A',
+                        'Stage URL': cand['url'],
+                        'Prod URL': 'N/A',
+                        'Prod Sequence': 'N/A',
+                        'Stage Sequence': cand['index'],
+                        'Sequence Match': '❌ No',
+                        'Match Type': 'MISMATCH',
+                        'Similarity': '0%',
+                        'Stage Word Count': 0,
+                        'Prod Word Count': 0,
+                        'Missing in Prod': 0,
+                        'Extra in Prod': 0,
+                        'Sample Missing Terms': '',
+                        'Sample Extra Terms': 'Page only in Stage',
+                        'Status': 'FAILED'
+                    }
+                    results.append(result)
+                    match_stats['mismatch'] += 1
         
         await prod_ctx.close()
         await stage_ctx.close()
         await browser.close()
     
-    return results, match_stats
+    return results, match_stats, stage_toc, prod_toc
 
 async def main():
     """Run validation and generate report."""
     try:
         print(f"\n{'='*60}")
-        print(f"  🔍 Deep Content Validation")
-        print(f"{'='*60}\n")
-        
-        results, match_stats = await validate_content()
+        results, match_stats, stage_toc, prod_toc = await validate_content()
         
         # Calculate overall percentage
         total = sum(match_stats.values())
@@ -460,27 +507,67 @@ async def main():
         print(f"\n{'='*60}")
         print(f"  📊 Results Summary")
         print(f"{'='*60}")
-        print(f"  ✅ Matches:   {match_stats['match']}")
-        print(f"  ⚠️  Partial:  {match_stats['partial']}")
-        print(f"  ❌ Mismatch: {match_stats['mismatch']}")
-        print(f"  🚨 Errors:   {match_stats['error']}")
+        print(f"  ✅ Match:    {match_stats['match']}")
+        print(f"  ❌ Mismatch: {match_stats['mismatch'] + match_stats['partial'] + match_stats['error']}")
         print(f"  📈 Overall:  {overall_pct:.1f}%")
         print(f"{'='*60}\n")
-        
+
         # Create DataFrame
         df = pd.DataFrame(results)
-        
-        # Save report
+
+        # Summary DataFrame
+        summary_df = pd.DataFrame([
+            ['Deep Content Validation Report'],
+            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Stage URL', STAGE_URL],
+            ['Prod URL', PROD_URL],
+            [''],
+            ['✅ Match', match_stats['match']],
+            ['❌ Mismatch', match_stats['mismatch'] + match_stats['partial'] + match_stats['error']],
+            ['Overall Score', f"{overall_pct:.1f}%"],
+            [''],
+            ['Stage Topics', len(stage_toc)],
+            ['Prod Topics', len(prod_toc)]
+        ])
+
+        # TOC DataFrames
+        stage_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(stage_toc)
+        ])
+        prod_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(prod_toc)
+        ])
+
+        # Save multi-tab report
         os.makedirs(os.path.dirname(REPORT_FILENAME), exist_ok=True)
-        df.to_excel(REPORT_FILENAME, sheet_name='Content Comparison', index=False)
-        print(f"✓ Report saved to: {REPORT_FILENAME}")
+        with pd.ExcelWriter(REPORT_FILENAME, engine='openpyxl') as writer:
+            summary_df.to_excel(writer, sheet_name='Summary', header=False, index=False)
+            df.to_excel(writer, sheet_name='Comparison', index=False)
+            stage_toc_df.to_excel(writer, sheet_name='Stage TOC', index=False)
+            prod_toc_df.to_excel(writer, sheet_name='Prod TOC', index=False)
+
+            # 5. Structure (Side-by-side raw sequences)
+            max_len = max(len(stage_toc), len(prod_toc))
+            structure_data = []
+            for i in range(max_len):
+                s_item = stage_toc[i] if i < len(stage_toc) else {'title': '', 'url': ''}
+                p_item = prod_toc[i] if i < len(prod_toc) else {'title': '', 'url': ''}
+                structure_data.append({
+                    'Stage #': i + 1 if i < len(stage_toc) else '',
+                    'Stage Title': s_item['title'],
+                    'Prod #': i + 1 if i < len(prod_toc) else '',
+                    'Prod Title': p_item['title']
+                })
+            pd.DataFrame(structure_data).to_excel(writer, sheet_name='Structure', index=False)
+
+        print(f"✓ Multi-tab report saved to: {REPORT_FILENAME}")
         
         # Output results in server format
         results_json = {
             'match': match_stats['match'],
-            'partial': match_stats['partial'],
             'mismatch': match_stats['mismatch'],
-            'error': match_stats['error'],
             'overall': overall_pct
         }
         print(f"::RESULTS::{json.dumps(results_json)}")

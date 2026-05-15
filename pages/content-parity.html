@@ -73,6 +73,10 @@
     .sheet-tab { padding: 8px 16px; border-radius: 20px; background: #f4f5f7; border: 1px solid #ddd; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; color: #4a4a4a; }
     .sheet-tab.active { background: #da291c; color: white; border-color: #da291c; }
     .sheet-tab:hover:not(.active) { background: #e2e4e8; color: #232527; }
+    /* Excel-like color highlighting */
+    .cell-warn { background-color: #fff3cd !important; }
+    .cell-danger { background-color: #f8d7da !important; color: #721c24; }
+    .cell-success { background-color: #d4edda !important; color: #155724; }
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
     .modal-content { background: white; padding: 25px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border-top: 4px solid #da291c; }
   </style>
@@ -420,9 +424,39 @@
       }
       rows.forEach((rowData, rIdx) => {
         const tr = document.createElement('tr');
-        rowData.forEach(cellValue => {
+        rowData.forEach((cellValue, cIdx) => {
           const cell = document.createElement(rIdx === 0 ? 'th' : 'td');
           cell.textContent = cellValue === null || cellValue === undefined ? '' : cellValue;
+          
+          // Highlighting Logic
+          const val = String(cellValue || '').toLowerCase();
+          const sheetName = (reportData.sheets[sheetIndex].name || '').toLowerCase();
+
+          // 1. Structure Tab Row Comparison
+          if (sheetName === 'structure' && rIdx > 0) {
+              const stageTitle = String(rowData[1] || '');
+              const prodTitle = String(rowData[3] || '');
+              if (stageTitle !== prodTitle) {
+                  cell.classList.add('cell-danger');
+              } else if (stageTitle && prodTitle) {
+                  cell.classList.add('cell-success');
+              }
+          }
+
+          // 2. Generic Keyword Highlighting
+          if (val === 'mismatch' || val.includes('❌ mismatch') || val.includes('✗') ||
+              val === 'missing_in_prod' || val === 'missing_in_stage' || 
+              val === 'extra_in_prod' || val === 'extra_in_stage' ||
+              val === 'failed' || val === '[missing]') {
+              cell.classList.add('cell-danger');
+          }
+          if (val.includes('warn') || val === 'out_of_order' || val === 'case_mismatch') {
+              cell.classList.add('cell-warn');
+          }
+          if (val.includes('pass') || val.includes('ok') || val.includes('✓') || val === 'yes' || val.startsWith('✅')) {
+              cell.classList.add('cell-success');
+          }
+
           tr.appendChild(cell);
         });
         table.appendChild(tr);
