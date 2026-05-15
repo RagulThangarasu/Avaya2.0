@@ -336,22 +336,15 @@ async def validate_content():
             if not stage_url:
                 # Missing in stage
                 result = {
-                    'Stage Title': 'N/A',
-                    'Prod Title': prod_item['title'],
-                    'Stage URL': 'N/A',
-                    'Prod URL': prod_url,
                     'Prod Sequence': idx,
                     'Stage Sequence': 'N/A',
-                    'Sequence Match': '❌ No',
-                    'Match Type': 'MISMATCH',
-                    'Similarity': '0%',
-                    'Stage Word Count': 0,
-                    'Prod Word Count': 0,
-                    'Missing in Prod': 0,
-                    'Extra in Prod': 0,
-                    'Sample Missing Terms': 'Page not in Stage',
-                    'Sample Extra Terms': '',
-                    'Status': 'FAILED'
+                    'Sequence Match': '❌',
+                    'Content Match': '❌',
+                    'Similarity %': '0%',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': '[MISSING]',
+                    'Prod URL': prod_url,
+                    'Stage URL': 'N/A'
                 }
                 return 'mismatch', result
             
@@ -391,30 +384,23 @@ async def validate_content():
                 comparison = compare_page_content(stage_data['text'], prod_data['text'])
                 # Force to Match/Mismatch
                 is_match = comparison['match_type'] == 'match' and idx == matched_stage['index']
-                match_type = 'MATCH' if is_match else 'MISMATCH'
                 similarity = comparison['similarity']
                 
                 result = {
-                    'Stage Title': stage_data['title'],
-                    'Prod Title': prod_data['title'],
-                    'Stage URL': stage_url,
-                    'Prod URL': prod_url,
                     'Prod Sequence': idx,
                     'Stage Sequence': matched_stage['index'],
-                    'Sequence Match': '✅ Yes' if idx == matched_stage['index'] else '❌ No',
-                    'Match Type': match_type,
-                    'Similarity': f"{similarity * 100:.1f}%",
-                    'Stage Word Count': comparison.get('stage_words', 0),
-                    'Prod Word Count': comparison.get('prod_words', 0),
-                    'Missing in Prod': comparison.get('missing_in_prod_count', 0),
-                    'Extra in Prod': comparison.get('extra_in_prod_count', 0),
-                    'Sample Missing Terms': comparison.get('missing_sample', ''),
-                    'Sample Extra Terms': comparison.get('extra_sample', ''),
-                    'Status': 'OK' if is_match else 'FAILED'
+                    'Sequence Match': '✅' if idx == matched_stage['index'] else '❌',
+                    'Content Match': '✅' if is_match else '❌',
+                    'Similarity %': f"{similarity * 100:.1f}%",
+                    'Prod Title': prod_data['title'],
+                    'Stage Title': stage_data['title'],
+                    'Prod URL': prod_url,
+                    'Stage URL': stage_url
                 }
                 
+                # Simple progress log
                 emoji = '✅' if is_match else '❌'
-                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} {emoji} {match_type} ({similarity*100:.0f}%)")
+                print(f"  [{idx}/{total}] {prod_item['title'][:50]:50s} {emoji} ({similarity*100:.1f}%)")
                 
                 return 'match' if is_match else 'mismatch', result
                 
@@ -463,27 +449,19 @@ async def validate_content():
                     results.append(result)
         
         # Add items that exist in Stage but NOT in Prod (Extra items)
-        print(f"\n➕ Checking for extra items in Stage...")
         for fn, candidates in stage_by_filename.items():
             for cand in candidates:
                 if not cand['used']:
                     result = {
-                        'Stage Title': cand['title'],
-                        'Prod Title': 'N/A',
-                        'Stage URL': cand['url'],
-                        'Prod URL': 'N/A',
                         'Prod Sequence': 'N/A',
                         'Stage Sequence': cand['index'],
-                        'Sequence Match': '❌ No',
-                        'Match Type': 'MISMATCH',
-                        'Similarity': '0%',
-                        'Stage Word Count': 0,
-                        'Prod Word Count': 0,
-                        'Missing in Prod': 0,
-                        'Extra in Prod': 0,
-                        'Sample Missing Terms': '',
-                        'Sample Extra Terms': 'Page only in Stage',
-                        'Status': 'FAILED'
+                        'Sequence Match': '❌',
+                        'Content Match': '❌',
+                        'Similarity %': '0%',
+                        'Prod Title': '[MISSING]',
+                        'Stage Title': cand['title'],
+                        'Prod URL': 'N/A',
+                        'Stage URL': cand['url']
                     }
                     results.append(result)
                     match_stats['mismatch'] += 1
@@ -508,7 +486,7 @@ async def main():
         print(f"  📊 Results Summary")
         print(f"{'='*60}")
         print(f"  ✅ Match:    {match_stats['match']}")
-        print(f"  ❌ Mismatch: {match_stats['mismatch'] + match_stats['partial'] + match_stats['error']}")
+        print(f"  ❌ Mismatch: {match_stats['mismatch']}")
         print(f"  📈 Overall:  {overall_pct:.1f}%")
         print(f"{'='*60}\n")
 
@@ -523,7 +501,7 @@ async def main():
             ['Prod URL', PROD_URL],
             [''],
             ['✅ Match', match_stats['match']],
-            ['❌ Mismatch', match_stats['mismatch'] + match_stats['partial'] + match_stats['error']],
+            ['❌ Mismatch', match_stats['mismatch']],
             ['Overall Score', f"{overall_pct:.1f}%"],
             [''],
             ['Stage Topics', len(stage_toc)],

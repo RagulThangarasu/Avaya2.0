@@ -213,30 +213,24 @@ async def run_validation():
                     issue = f"Differences in: {', '.join(reasons)}"
                 
                 comparison.append({
-                    '#': prod_idx + 1,
-                    'Prod Title': prod_item['title'],
-                    'Stage Title': stage_item['title'],
-                    'Status': status,
-                    'Issue': issue,
                     'Prod Sequence': prod_idx + 1,
                     'Stage Sequence': stage_idx + 1,
-                    'Title Match': '✅ Yes' if title_match else '❌ No',
-                    'Sequence Match': '✅ Yes' if same_position else '❌ No',
+                    'Sequence Match': '✅' if same_position else '❌',
+                    'Content Match': '✅' if title_match else '❌',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': stage_item['title'],
                     'Prod URL': prod_item['url'],
                     'Stage URL': stage_item['url'],
                 })
             else:
                 # Missing in stage
                 comparison.append({
-                    '#': prod_idx + 1,
-                    'Prod Title': prod_item['title'],
-                    'Stage Title': '[MISSING]',
-                    'Status': '❌ MISMATCH',
-                    'Issue': 'Topic missing in Stage',
                     'Prod Sequence': prod_idx + 1,
                     'Stage Sequence': '-',
-                    'Title Match': '-',
-                    'Sequence Match': '-',
+                    'Sequence Match': '❌',
+                    'Content Match': '❌',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': '[MISSING]',
                     'Prod URL': prod_item['url'],
                     'Stage URL': '-',
                 })
@@ -248,22 +242,19 @@ async def run_validation():
                     stage_idx = cand['idx']
                     stage_item = cand['item']
                     comparison.append({
-                    '#': '-',
-                    'Prod Title': '[MISSING]',
-                    'Stage Title': stage_item['title'],
-                    'Status': '❌ MISMATCH',
-                    'Issue': 'Topic extra in Stage (missing in Prod)',
                     'Prod Sequence': '-',
                     'Stage Sequence': stage_idx + 1,
-                    'Title Match': '-',
-                    'Sequence Match': '-',
+                    'Sequence Match': '❌',
+                    'Content Match': '❌',
+                    'Prod Title': '[MISSING]',
+                    'Stage Title': stage_item['title'],
                     'Prod URL': '-',
                     'Stage URL': stage_item['url'],
                 })
 
         # ── Calculate Stats ──────────────────────────────────────────
         total = len(comparison)
-        full_match = len([r for r in comparison if r['Status'] == '✅ MATCH'])
+        full_match = len([r for r in comparison if r['Content Match'] == '✅' and r['Sequence Match'] == '✅'])
         mismatch = total - full_match
         match_pct = int(full_match / max(total, 1) * 100)
 
