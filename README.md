@@ -104,6 +104,105 @@ npm run test:pdf-validation
 
 ---
 
+## Running Server Locally
+
+The web UI server provides a dashboard for running validations and viewing reports.
+
+### Start the Server
+
+```bash
+# Install dependencies (if not already done)
+npm install
+
+# Start the server (runs on http://localhost:3000)
+npm run dev
+# or
+node scripts/server.ts
+```
+
+The server will be available at: **http://localhost:3000**
+
+### Web UI Features
+
+#### 1. **TOC Parity Validation** (`/toc-parity.html`)
+- Validates Stage vs Production table of contents
+- Shows missing topics, sequence differences
+- Generates Excel report
+
+#### 2. **Content Validation** (`/content-deep-validation.html`)
+- Compares page content (h2, h3, paragraphs only)
+- Skips headers, footers, right navigation
+- Shows word count differences and sample missing/extra terms
+- **Details:**
+  - Stage URL: `https://publish-p181473-e1910301.adobeaemcloud.com/...`
+  - Production URL: `https://documentation.avaya.com/...`
+  - Validates 213+ pages in parallel (10 concurrent)
+  - Generates detailed Excel report with mismatch analysis
+
+#### 3. **Report Viewer** (`/report-viewer.html`)
+- View generated Excel reports in table format
+- Filter and sort results
+- Download reports
+
+### Environment Variables
+
+Create a `.env` file or set these environment variables:
+
+```env
+STAGE_URL=https://publish-p181473-e1910301.adobeaemcloud.com/en-us/home/bundle/avaya-aura-admin-portal/AdministeringAvayaAuraAdminPortal/
+PROD_URL=https://documentation.avaya.com/bundle/AdministeringAvayaAuraAdminPortal/page/
+PORT=3000
+```
+
+### API Endpoints
+
+```bash
+# Run TOC Parity Validation
+POST /api/run/toc-parity
+Body: { "stageUrl": "...", "prodUrl": "..." }
+
+# Run Deep Content Validation
+POST /api/run/deep-content-validation
+Body: { "stageUrl": "...", "prodUrl": "..." }
+
+# Get logs for a job
+GET /api/logs/{jobId}
+
+# Download report
+GET /api/reports/{reportType}/{filename}
+```
+
+### Example Workflow
+
+1. **Start server:**
+   ```bash
+   npm run dev
+   ```
+
+2. **Open browser:**
+   ```
+   http://localhost:3000
+   ```
+
+3. **Run validation:**
+   - Navigate to "Content Validation"
+   - Enter Stage URL and Production URL
+   - Click "Run Validation"
+   - Watch live progress
+
+4. **View results:**
+   - See statistics (✅ Matched, ⚠️ Partial, ❌ Mismatch)
+   - Download Excel report
+   - View in Report Viewer
+
+### Output Locations
+
+- **Reports:** `.ui_reports/` directory
+- **Logs:** `.logs/` directory (if enabled)
+- **Cached pages:** `.cache/` directory (if caching enabled)
+
+---
+
 ## Authentication
 
 The framework handles AEM login **automatically**:

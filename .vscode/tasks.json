@@ -5,6 +5,11 @@
 			"label": "Push to GitHub",
 			"type": "shell",
 			"command": "cd /Users/ragul/Desktop/Avayaa-2.0 && git add -A && git commit -m \"Content validation optimization: Skip header/footer/nav - validate only h2, h3, p\" && git push -u origin content-validation-optimization"
+		},
+		{
+			"label": "Auto Push to GitHub",
+			"type": "shell",
+			"command": "cd /Users/ragul/Desktop/Avayaa-2.0 && bash auto-push.sh"
 		}
 	]
 }
