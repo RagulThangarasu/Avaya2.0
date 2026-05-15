@@ -344,20 +344,37 @@
                         el.textContent = cell || '';
                     }
                     
-                    // Simple highlighting logic
+                    // ── Highlighting Logic ──
                     const val = String(cell || '').toLowerCase();
-                    if (val.includes('fail') || val.includes('critical') || val.includes('missing') || val.includes('✗') ||
-                        val === 'missing_in_prod' || val === 'missing_in_stage' || val === 'extra_in_prod' || val === 'extra_in_stage') {
-                        el.className = 'cell-danger';
+                    const sheetName = (sheet.name || '').toLowerCase();
+
+                    // 1. Structure Tab Row Comparison
+                    if (sheetName === 'structure' && rIdx > 0) {
+                        const stageTitle = String(row[1] || '');
+                        const prodTitle = String(row[3] || '');
+                        if (stageTitle !== prodTitle) {
+                            el.classList.add('cell-danger');
+                        } else if (stageTitle && prodTitle) {
+                            el.classList.add('cell-success');
+                        }
                     }
+
+                    // 2. Generic Keyword Highlighting (Refined to avoid false positives like "failover")
+                    if (val === 'mismatch' || val.includes('❌ mismatch') || val.includes('✗') ||
+                        val === 'missing_in_prod' || val === 'missing_in_stage' || 
+                        val === 'extra_in_prod' || val === 'extra_in_stage' ||
+                        val === 'failed' || val === '[missing]') {
+                        el.classList.add('cell-danger');
+                    }
+                    
                     if (val.includes('warn') || val.includes('major') || val === 'out_of_order' ||
-                        val === 'symbol_mismatch' || val === 'grouping_mismatch') {
-                        el.className = 'cell-warn';
+                        val === 'symbol_mismatch' || val === 'grouping_mismatch' || val === 'case_mismatch') {
+                        el.classList.add('cell-warn');
                     }
-                    if (val === 'case_mismatch') el.className = 'cell-warn';
-                    if (val.includes('pass') || val.includes('ok') || val.includes('✓') || val === 'yes' || val === 'filename_match' ||
-                        val.startsWith('✅')) {
-                        el.className = 'cell-success';
+                    
+                    if (val.includes('pass') || val.includes('ok') || val.includes('✓') || val === 'yes' || 
+                        val === 'filename_match' || val.startsWith('✅')) {
+                        el.classList.add('cell-success');
                     }
                     
                     tr.appendChild(el);

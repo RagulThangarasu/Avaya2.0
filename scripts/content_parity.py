@@ -14,7 +14,6 @@ UI_REPORTS_DIR = os.path.join(os.getcwd(), '.ui_reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(UI_REPORTS_DIR, exist_ok=True)
 
-# Load URLs
 TEST_URLS_PATH = os.path.join(os.getcwd(), 'config', 'test-urls.json')
 AUTH_STATE_PATH = os.path.join(os.getcwd(), 'auth-sessions', 'storage-state.json')
 
@@ -35,9 +34,9 @@ if not STAGE_URL or not PROD_URL:
     print("❌ Error: Missing STAGE_URL or PROD_URL.")
     sys.exit(1)
 
-print(f"🚀 Starting Content Parity Validation")
-print(f"   Published (Stage): {STAGE_URL}")
-print(f"   Prod:              {PROD_URL}")
+print(f"🚀 Starting TOC Validation")
+print(f"   Stage (Publish): {STAGE_URL}")
+print(f"   Production:      {PROD_URL}")
 
 def slugify(t):
     if not t: return ""
@@ -60,7 +59,6 @@ async def handle_cookies(page):
 
 # ── Prod TOC Extraction ──────────────────────────────────────────────
 async def extract_prod_toc(page, base_url):
-    """Extract TOC from Production (documentation.avaya.com)."""
     await page.wait_for_load_state("networkidle")
     await handle_cookies(page)
 
@@ -112,7 +110,6 @@ async def extract_prod_toc(page, base_url):
 
 # ── Stage/Published TOC Extraction ───────────────────────────────────
 async def extract_stage_toc(page, base_url):
-    """Extract TOC from Published/Stage (AEM publish)."""
     await page.wait_for_load_state("networkidle")
     await handle_cookies(page)
     await page.wait_for_timeout(2000)
@@ -151,8 +148,7 @@ async def run_validation():
         )
         prod_ctx = await browser.new_context()
 
-        # ── Step 1: Extract TOCs ──────────────────────────────────────
-        print("🔍 Scanning Navigation Structure...")
+        print("\n🔍 Extracting TOC from both environments...")
 
         p_page = await prod_ctx.new_page()
         await p_page.goto(PROD_URL, wait_until="networkidle", timeout=60000)
@@ -160,116 +156,189 @@ async def run_validation():
         await p_page.close()
 
         s_page = await stage_ctx.new_page()
-        print(f"🌐 Opening Published URL for TOC...")
         await s_page.goto(STAGE_URL, wait_until="networkidle", timeout=60000)
         stage_toc = await extract_stage_toc(s_page, STAGE_URL)
         await s_page.close()
 
-        # ── Step 2: Build TOC Comparison Report ───────────────────────
-        print(f"📊 Comparing TOC Structure: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
+        print(f"\n📊 Comparing: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
 
-        stage_by_filename = {}
-        for item in stage_toc:
-            fn = get_filename(item['url'])
+        # ── Build lookup maps ────────────────────────────────────────
+        prod_fn_map = {}  # filename -> (index, item)
+        for i, t in enumerate(prod_toc):
+            fn = get_filename(t['url'])
             if fn:
-                stage_by_filename[fn] = item
+                prod_fn_map[fn] = (i, t)
 
-        toc_comparison = []
-        max_len = max(len(prod_toc), len(stage_toc), 1)
+        stage_fn_map = {} # filename -> list of (index, item, used)
+        for i, t in enumerate(stage_toc):
+            fn = get_filename(t['url'])
+            if fn:
+                if fn not in stage_fn_map:
+                    stage_fn_map[fn] = []
+                stage_fn_map[fn].append({'idx': i, 'item': t, 'used': False})
 
-        for i in range(max_len):
-            prod_item = prod_toc[i] if i < len(prod_toc) else None
-            stage_item = stage_toc[i] if i < len(stage_toc) else None
+        # ── Detailed Comparison ──────────────────────────────────────
+        comparison = []
+        used_stage = set()
 
-            match_status = "NO"
-            matched_stage = stage_item
+        for prod_idx, prod_item in enumerate(prod_toc):
+            prod_fn = get_filename(prod_item['url'])
+            
+            # Match by filename
+            stage_idx = None
+            stage_item = None
+            
+            if prod_fn in stage_fn_map:
+                candidates = stage_fn_map[prod_fn]
+                for cand in candidates:
+                    if not cand['used']:
+                        stage_idx = cand['idx']
+                        stage_item = cand['item']
+                        cand['used'] = True
+                        break
 
-            if prod_item and stage_item:
-                if slugify(prod_item['title']) == slugify(stage_item['title']):
-                    match_status = "YES"
+            if stage_item:
+                # Found in both - check details
+                title_match = slugify(prod_item['title']) == slugify(stage_item['title'])
+                same_position = (prod_idx == stage_idx)
+                
+                if title_match and same_position:
+                    status = '✅ MATCH'
+                    issue = ''
                 else:
-                    prod_fn = get_filename(prod_item['url'])
-                    if prod_fn in stage_by_filename:
-                        matched_stage = stage_by_filename[prod_fn]
-                        match_status = "FILENAME_MATCH"
-
-            prod_fn = get_filename(prod_item['url']) if prod_item else ''
-            pub_fn = get_filename(matched_stage['url']) if matched_stage else ''
-            if prod_item and matched_stage and prod_fn and pub_fn:
-                url_status = '✓ Match' if prod_fn == pub_fn else '✗ Mismatch'
+                    status = '❌ MISMATCH'
+                    reasons = []
+                    if not title_match: reasons.append('Title')
+                    if not same_position: reasons.append('Order')
+                    issue = f"Differences in: {', '.join(reasons)}"
+                
+                comparison.append({
+                    '#': prod_idx + 1,
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': stage_item['title'],
+                    'Status': status,
+                    'Issue': issue,
+                    'Prod Sequence': prod_idx + 1,
+                    'Stage Sequence': stage_idx + 1,
+                    'Title Match': '✅ Yes' if title_match else '❌ No',
+                    'Sequence Match': '✅ Yes' if same_position else '❌ No',
+                    'Prod URL': prod_item['url'],
+                    'Stage URL': stage_item['url'],
+                })
             else:
-                url_status = 'N/A'
+                # Missing in stage
+                comparison.append({
+                    '#': prod_idx + 1,
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': '[MISSING]',
+                    'Status': '❌ MISMATCH',
+                    'Issue': 'Topic missing in Stage',
+                    'Prod Sequence': prod_idx + 1,
+                    'Stage Sequence': '-',
+                    'Title Match': '-',
+                    'Sequence Match': '-',
+                    'Prod URL': prod_item['url'],
+                    'Stage URL': '-',
+                })
 
-            toc_comparison.append({
-                'Order': i + 1,
-                'Prod Topic': prod_item['title'] if prod_item else '[MISSING IN PROD]',
-                'Published Topic': matched_stage['title'] if matched_stage else '[MISSING IN PUBLISHED]',
-                'Match': match_status,
-                'Prod URL': prod_item['url'] if prod_item else 'N/A',
-                'Published URL': matched_stage['url'] if matched_stage else 'N/A',
-                'URL Status': url_status
-            })
+        # Find items only in Stage (extra)
+        for fn, candidates in stage_fn_map.items():
+            for cand in candidates:
+                if not cand['used']:
+                    stage_idx = cand['idx']
+                    stage_item = cand['item']
+                    comparison.append({
+                    '#': '-',
+                    'Prod Title': '[MISSING]',
+                    'Stage Title': stage_item['title'],
+                    'Status': '❌ MISMATCH',
+                    'Issue': 'Topic extra in Stage (missing in Prod)',
+                    'Prod Sequence': '-',
+                    'Stage Sequence': stage_idx + 1,
+                    'Title Match': '-',
+                    'Sequence Match': '-',
+                    'Prod URL': '-',
+                    'Stage URL': stage_item['url'],
+                })
 
-        matched_count = len([c for c in toc_comparison if c['Match'] in ('YES', 'FILENAME_MATCH')])
-        url_match_count = len([c for c in toc_comparison if c['URL Status'] == '✓ Match'])
-        url_mismatch_count = len([c for c in toc_comparison if c['URL Status'] == '✗ Mismatch'])
-        total = len(toc_comparison)
-        print(f"   ✅ Structure Match: {matched_count}/{total} ({int(matched_count/total*100) if total else 0}%)")
-        print(f"   🔗 URL Match: {url_match_count}/{total} | Mismatch: {url_mismatch_count}")
+        # ── Calculate Stats ──────────────────────────────────────────
+        total = len(comparison)
+        full_match = len([r for r in comparison if r['Status'] == '✅ MATCH'])
+        mismatch = total - full_match
+        match_pct = int(full_match / max(total, 1) * 100)
 
-        # ── Step 3: Generate Report ───────────────────────────────────
-        toc_df = pd.DataFrame(toc_comparison)
+        print(f"\n{'='*60}")
+        print(f"  📈 TOC Validation Results")
+        print(f"{'='*60}")
+        print(f"  ✅ Match:       {full_match}")
+        print(f"  ❌ Mismatch:    {mismatch}")
+        print(f"  📊 Match Rate:  {match_pct}%")
+        print(f"{'='*60}\n")
 
+        # ── Generate Excel Report ────────────────────────────────────
+        os.makedirs(os.path.dirname(REPORT_FILENAME), exist_ok=True)
+
+        # Prepare individual TOC dataframes
+        stage_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(stage_toc)
+        ])
+        prod_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(prod_toc)
+        ])
         summary_data = [
-            ['Content Parity – TOC Structure Report'],
+            ['TOC Validation Report'],
             [''],
-            ['Run Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Stage URL', STAGE_URL],
             ['Prod URL', PROD_URL],
-            ['Published URL', STAGE_URL],
             [''],
-            ['── TOC Structure Summary ──'],
-            ['Prod Topics Found', len(prod_toc)],
-            ['Published Topics Found', len(stage_toc)],
-            ['Sequence Matches (YES)', len([c for c in toc_comparison if c['Match'] == 'YES'])],
-            ['Filename Matches', len([c for c in toc_comparison if c['Match'] == 'FILENAME_MATCH'])],
-            ['Mismatches', len([c for c in toc_comparison if c['Match'] == 'NO'])],
-            ['Match Percentage', f"{int(matched_count/total*100) if total else 0}%"],
+            ['── Results ──'],
+            ['Prod Topics', len(prod_toc)],
+            ['Stage Topics', len(stage_toc)],
             [''],
-            ['URL Match Count', url_match_count],
-            ['URL Mismatch Count', url_mismatch_count],
+            ['✅ Match', full_match],
+            ['❌ Mismatch', mismatch],
+            [''],
+            ['Match Rate', f'{match_pct}%'],
         ]
 
-        prod_only = []
-        for item in prod_toc:
-            fn = get_filename(item['url'])
-            if fn not in stage_by_filename:
-                prod_only.append({'Topic': item['title'], 'Prod URL': item['url']})
-
-        prod_filenames = {get_filename(t['url']) for t in prod_toc}
-        stage_only = []
-        for item in stage_toc:
-            fn = get_filename(item['url'])
-            if fn not in prod_filenames:
-                stage_only.append({'Topic': item['title'], 'Published URL': item['url']})
-
         with pd.ExcelWriter(REPORT_FILENAME, engine='openpyxl') as writer:
+            # 1. Summary
             pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', header=False, index=False)
-            toc_df.to_excel(writer, sheet_name='TOC Structure', index=False)
-            if prod_only:
-                pd.DataFrame(prod_only).to_excel(writer, sheet_name='Only in Prod', index=False)
-            if stage_only:
-                pd.DataFrame(stage_only).to_excel(writer, sheet_name='Only in Published', index=False)
+            
+            # 2. Comparison
+            pd.DataFrame(comparison).to_excel(writer, sheet_name='Comparison', index=False)
+            
+            # 3. Stage TOC
+            stage_toc_df.to_excel(writer, sheet_name='Stage TOC', index=False)
+            
+            # 4. Prod TOC
+            prod_toc_df.to_excel(writer, sheet_name='Prod TOC', index=False)
 
-        overall_pct = int(matched_count / total * 100) if total else 0
+            # 5. Structure (Side-by-side raw sequences)
+            max_len = max(len(stage_toc), len(prod_toc))
+            structure_data = []
+            for i in range(max_len):
+                s_item = stage_toc[i] if i < len(stage_toc) else {'title': '', 'url': ''}
+                p_item = prod_toc[i] if i < len(prod_toc) else {'title': '', 'url': ''}
+                structure_data.append({
+                    'Stage #': i + 1 if i < len(stage_toc) else '',
+                    'Stage Title': s_item['title'],
+                    'Prod #': i + 1 if i < len(prod_toc) else '',
+                    'Prod Title': p_item['title']
+                })
+            pd.DataFrame(structure_data).to_excel(writer, sheet_name='Structure', index=False)
+
         results = {
-            'overall': overall_pct,
-            'headings': 100,
-            'tables': 100,
-            'images': 100,
-            'content': overall_pct,
+            'overall': match_pct,
+            'matched': full_match,
+            'mismatch': mismatch,
         }
+        print(f"\n✅ Report saved: {REPORT_FILENAME}")
         print(f"::RESULTS::{json.dumps(results)}")
-        print(f"✅ Report saved: {REPORT_FILENAME}")
+        
         await browser.close()
 
 if __name__ == "__main__":
