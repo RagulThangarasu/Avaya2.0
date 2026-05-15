@@ -209,6 +209,33 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
   res.json({ jobId: job.id });
 });
 
+// Run deep-content-validation
+app.post('/api/run/deep-content-validation', (req: any, res: any) => {
+  const { stage, production } = req.body;
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
+    return;
+  }
+
+  const normalized = normalizeUrls(stage || '', production || '');
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
+
+  const reportFile = `deep-content-validation-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
+
+  const job = startTest('deep-content-validation', [
+    'python3', '-u', 'scripts/deep_content_validation.py'
+  ], {
+    STAGE_URL: normalized.stage,
+    PROD_URL: normalized.production,
+    REPORT_FILENAME: reportPath
+  });
+  job.reportFile = reportFile;
+
+  res.json({ jobId: job.id });
+});
+
 // Run leftnav-validation
 app.post('/api/run/leftnav-validation', (req: any, res: any) => {
   const { stage, production } = req.body;
@@ -447,14 +474,25 @@ app.get('/api/download/:filename', (req: any, res: any) => {
 
   if (finalPath) {
     console.log(`   ✅ Found: ${finalPath}`);
-    res.download(finalPath, filename, (err) => {
-      if (err) {
-        console.error(`   ❌ Download error for ${filename}:`, err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to send file' });
-        }
-      }
-    });
+    try {
+      const fileBuffer = fs.readFileSync(finalPath);
+      const ext = path.extname(filename).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.pdf':  'application/pdf',
+        '.csv':  'text/csv',
+        '.txt':  'text/plain',
+        '.json': 'application/json',
+      };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.end(fileBuffer);
+    } catch (err: any) {
+      console.error(`   ❌ Read error for ${filename}:`, err);
+      res.status(500).json({ error: 'Failed to read file' });
+    }
   } else {
     console.warn(`   ⚠️ Not found in .ui_reports or reports/`);
     res.status(404).json({ error: 'File not found' });
@@ -485,6 +523,7 @@ app.get('/api/report-data/:type', async (req, res) => {
   
   const typeMap: Record<string, string> = {
     'content-parity': 'content-parity-report.xlsx',
+    'deep-content-validation': 'deep-content-validation-report.xlsx',
     'leftnav':        'leftnav-toc-validation-report.xlsx',
     'pdf-validation': 'pdf-validation-report.xlsx',
     'metadata-validation': 'metadata-validation-report.xlsx',
@@ -755,7 +794,8 @@ app.listen(PORT, () => {
   console.log(`║  URL: http://localhost:${PORT}                            ║`);
   console.log('║                                                          ║');
   console.log('║  Pages:                                                  ║');
-  console.log('║    • Content Validation  → /content-validation.html      ║');
+  console.log('║    • TOC Parity          → /content-parity.html          ║');
+  console.log('║    • TOC Validation      → /content-validation.html      ║');
   console.log('║    • Left Nav Validation → /leftnav-validation.html      ║');
   console.log('║    • PDF Validation      → /pdf-validation.html          ║');
   console.log('║    • Metadata Validation → /metadata-validation.html     ║');

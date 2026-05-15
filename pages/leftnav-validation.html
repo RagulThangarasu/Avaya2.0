@@ -113,10 +113,9 @@
   </div>
 
   <div class="nav">
-    <a href="content-validation.html">Content Validation</a>
-    <a href="leftnav-validation.html" class="active">Left Nav Validation</a>
-    <a href="pdf-validation.html">PDF Validation</a>
+    <a href="content-validation.html">TOC Validation</a>
     <a href="broken-links.html">Broken Links</a>
+    <a href="pdf-validation.html">PDF</a>
   </div>
 
   
@@ -175,7 +174,7 @@
            style="display:none;align-items:center;gap:8px;padding:12px 24px;background:#da291c;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(218,41,28,0.2);">
           📄 Download PDF
         </button>
-        <button id="viewReportBtn" onclick="window.open('report-viewer.html?type=leftnav', '_blank')"
+        <button id="viewReportBtn" onclick="openReportViewer()"
            style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:#4a4a4a;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
           👁️ View Online Report
         </button>
@@ -390,6 +389,14 @@
 
     let eventSource = null;
     let currentJobId = null;
+    let currentReportFile = null;
+
+    function openReportViewer() {
+      const url = currentJobId
+        ? `report-viewer.html?type=leftnav&jobId=${currentJobId}`
+        : 'report-viewer.html?type=leftnav';
+      window.open(url, '_blank');
+    }
 
     function runValidation() {
       const stageUrl = document.getElementById('stageUrl').value.trim();
@@ -447,6 +454,7 @@
             
             // Update download link
             if (msg.reportFile) {
+              currentReportFile = msg.reportFile;
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
               downloadBtn.href = '/api/download/' + msg.reportFile;
               downloadBtn.download = msg.reportFile;

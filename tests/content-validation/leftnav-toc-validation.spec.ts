@@ -333,13 +333,14 @@ function compareTocs(stage: TocNode[], prod: TocNode[]): TocIssue[] {
       if (prodIdx !== i) {
         issues.push({
           type: 'out_of_order',
-        severity: 'medium',
-        stageIndex: sNode.index,
-        prodIndex: pNode.index,
-        stageTitle: sNode.title,
-        prodTitle: pNode.title,
-        detail: `"${sNode.title}" is at position ${sNode.index} in Stage but ${pNode.index} in Prod`,
-      });
+          severity: 'medium',
+          stageIndex: sNode.index,
+          prodIndex: pNode.index,
+          stageTitle: sNode.title,
+          prodTitle: pNode.title,
+          detail: `"${sNode.title}" is at position ${sNode.index} in Stage but ${pNode.index} in Prod`,
+        });
+      }
     }
   }
 
