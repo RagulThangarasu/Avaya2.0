@@ -101,38 +101,67 @@ async def process_topic(session, topic, semaphore):
                 html = await resp.text()
                 soup = BeautifulSoup(html, 'html.parser')
                 
+                # ONLY check links/images within the PAGE BODY CONTENT
+                # Exclude header, footer, navigation, sidebars
+                # Priority: .zDocsTopicPageBody (prod), .topic-renderer__content (stage), main, article
+                body_content = (
+                    soup.select_one('.zDocsTopicPageBody') or
+                    soup.select_one('.zDocsTopicPageBodyContent') or
+                    soup.select_one('.topic-renderer__content') or
+                    soup.select_one('.cmp-topic-renderer') or
+                    soup.select_one('main') or
+                    soup.select_one('article') or
+                    soup.select_one('.content') or
+                    soup.select_one('#content')
+                )
+                
+                if not body_content:
+                    # Fallback: use full page but remove header/footer/nav
+                    body_content = soup.body or soup
+                    for noise_sel in ['header', 'footer', 'nav', '.zDocsHeader', '.zDocsFooter',
+                                      '.cmp-header', '.cmp-footer', '.navigation', '.zDocsTOC',
+                                      '.zDocsTocList', '.sidebar', '[role="navigation"]',
+                                      '.zDocsTopicActionBar', '[class*="ActionBar"]']:
+                        for el in body_content.select(noise_sel):
+                            el.decompose()
+                
                 tasks = []
                 
-                # 1. Links (<a> tags)
-                for a in soup.find_all('a', href=True):
+                # 1. Links (<a> tags) — only within body content
+                for a in body_content.find_all('a', href=True):
                     href = a['href']
+                    # Skip language switcher links, anchor-only, and navigation links
+                    if href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+                        continue
                     full_url = urljoin(topic['url'], href)
+                    # Skip links that are just locale switches (e.g., /content/aemsites/ja-jp, /fr-ca, /zh-cn)
+                    if re.search(r'/(?:ja-jp|zh-cn|fr-ca|de-de|es-es|pt-br|ko-kr|it-it)(?:/|$)', full_url):
+                        continue
+                    # Skip links to the site home that are clearly navigation
+                    parsed = urlparse(full_url)
+                    if parsed.path in ('/', '/en-us/home', '/content/aemsites/en-us/home'):
+                        continue
                     tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'Link', a.get_text().strip() or 'Anchor'))
 
-                # 2. Images (<img> tags)
-                for img in soup.find_all('img', src=True):
+                # 2. Images (<img> tags) — only within body content
+                for img in body_content.find_all('img', src=True):
                     src = img['src']
+                    if src.startswith('data:'):
+                        continue
                     full_url = urljoin(topic['url'], src)
                     tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'Image', img.get('alt', '').strip() or 'Image Asset'))
 
-                # 3. Icons (link rel="icon", rel="shortcut icon")
-                for link in soup.find_all('link', rel=re.compile(r'icon', re.I)):
-                    if link.get('href'):
-                        full_url = urljoin(topic['url'], link['href'])
-                        tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'Icon', f"Favicon/Icon ({link.get('rel')})"))
-
-                # 4. SVG Icons (<use xlink:href="..."> or <use href="...">)
-                for use in soup.find_all('use'):
+                # 3. SVG Icons (<use xlink:href="..."> or <use href="...">) — only in body
+                for use in body_content.find_all('use'):
                     href = use.get('href') or use.get('xlink:href')
                     if href:
-                        # Extract the base URL if it's a sprite reference like icons.svg#home
                         base_asset = href.split('#')[0]
                         if base_asset:
                             full_url = urljoin(topic['url'], base_asset)
                             tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'SVG Icon', f"SVG Sprite: {href}"))
 
-                # 5. Background Images in inline styles
-                for el in soup.find_all(style=re.compile(r'background-image', re.I)):
+                # 4. Background Images in inline styles — only in body
+                for el in body_content.find_all(style=re.compile(r'background-image', re.I)):
                     style = el.get('style')
                     match = re.search(r'url\(([\'"]?)(.*?)\1\)', style)
                     if match:
@@ -140,12 +169,12 @@ async def process_topic(session, topic, semaphore):
                         full_url = urljoin(topic['url'], bg_url)
                         tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'BG Image', 'Inline Background Image'))
 
-                # 6. Objects and Embeds (SVGs, PDFs, etc.)
-                for obj in soup.find_all('object', data=True):
+                # 5. Objects and Embeds — only in body
+                for obj in body_content.find_all('object', data=True):
                     full_url = urljoin(topic['url'], obj['data'])
                     tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'Object', f"Object: {obj['data']}"))
                 
-                for embed in soup.find_all('embed', src=True):
+                for embed in body_content.find_all('embed', src=True):
                     full_url = urljoin(topic['url'], embed['src'])
                     tasks.append(validate_url(session, full_url, topic['title'], topic['url'], 'Embed', f"Embed: {embed['src']}"))
 
@@ -239,7 +268,7 @@ async def main():
 
         # 2. Parallel Process Topics and Links
         # Use a semaphore to limit concurrent TOPIC requests, but within each topic we fire links in parallel
-        semaphore = asyncio.Semaphore(5) 
+        semaphore = asyncio.Semaphore(15) 
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         async with aiohttp.ClientSession(headers=headers) as session:
             topic_tasks = [process_topic(session, topic, semaphore) for topic in unique_topics]
