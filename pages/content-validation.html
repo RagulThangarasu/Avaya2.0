@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TOC Validation</title>
+  <title>Content Parity Validation</title>
   <script>
     // AUTOMATIC REDIRECT TO LOCALHOST (Complete Fix for Mixed Content)
     if (window.location.hostname.includes('github.io')) {
@@ -103,8 +103,8 @@
 <body>
   <div class="header">
     <div class="header-left">
-      <h1>🔍 TOC Validation</h1>
-      <p>Content Validation • Compare Publish vs Production TOC structure and URL parity</p>
+      <h1>🔍 Content Parity Validation</h1>
+      <p>Compare Publish vs Production TOC structure and URL parity</p>
     </div>
     <div style="display:flex; align-items:center; gap:15px;">
       <!-- AEM Status Badge (Hidden) -->
@@ -149,11 +149,9 @@
   </div>
 
   <div class="nav">
-    <a href="content-validation.html" class="active">TOC Validation</a>
-    <a href="content-deep-validation.html">Content Validation</a>
+    <a href="content-validation.html" class="active">Content Validation</a>
     <a href="pdf-validation.html">PDF Validation</a>
     <a href="broken-links.html">Broken Links</a>
-    <a href="metadata-validation.html">Metadata</a>
   </div>
 
   <div class="container">
@@ -180,7 +178,7 @@
         <div class="hint">Public production documentation URL</div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run TOC Validation</button>
+        <button class="btn btn-primary" id="runBtn" onclick="runValidation()">▶ Run Content Validation</button>
         <button class="btn btn-secondary" id="stopBtn" onclick="stopValidation()" style="display:none;">⏹ Stop</button>
       </div>
 

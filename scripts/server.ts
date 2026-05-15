@@ -213,18 +213,14 @@ app.post('/api/run/content-parity', (req: any, res: any) => {
     PROD_URL: normalized.production,
     REPORT_FILENAME: reportPath
   });
-  job.reportFile = reportFile;
   res.json({ jobId: job.id });
 });
 
 // Run deep-content-validation
 app.post('/api/run/deep-content-validation', (req: any, res: any) => {
-  const stage = req.body.stage || req.body.stageUrl;
-  const production = req.body.production || req.body.prodUrl;
-  const threshold = req.body.threshold || '85';
-
-  if (!stage || !production) {
-    res.json({ error: 'Both Stage and Production URLs are required' });
+  const { stage, production } = req.body;
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
     return;
   }
 
@@ -240,7 +236,6 @@ app.post('/api/run/deep-content-validation', (req: any, res: any) => {
   ], {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
-    THRESHOLD: String(threshold),
     REPORT_FILENAME: reportPath
   });
   job.reportFile = reportFile;
@@ -472,7 +467,6 @@ app.post('/api/stop', (req, res) => {
 
 // Serve reports for download (static)
 app.use('/reports', express.static(REPORTS_DIR));
-app.use('/screenshots', express.static(path.join(UI_REPORTS_DIR, 'screenshots')));
 
 // Explicit download endpoint — forces browser Save As dialog
 app.get('/api/download/:filename', (req: any, res: any) => {
@@ -481,42 +475,22 @@ app.get('/api/download/:filename', (req: any, res: any) => {
   const fallbackPath = path.resolve(REPORTS_DIR, filename);
   
   console.log(`🔍 Download Request: ${filename}`);
+  console.log(`   Trying: ${filePath}`);
+  
   const finalPath = fs.existsSync(filePath) ? filePath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
 
   if (finalPath) {
     console.log(`   ✅ Found: ${finalPath}`);
-    try {
-      const fileBuffer = fs.readFileSync(finalPath);
-      const ext = path.extname(filename).toLowerCase();
-      const contentType = ext === '.xlsx'
-        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        : ext === '.txt' ? 'text/plain' : ext === '.pdf' ? 'application/pdf' : 'application/octet-stream';
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Length', fileBuffer.length);
-      res.end(fileBuffer);
-    } catch (err: any) {
-      console.error(`   ❌ Download error for ${filename}:`, err.message);
-      if (!res.headersSent) res.status(500).json({ error: 'Failed to read file: ' + err.message });
-    }
+    res.download(finalPath, filename, (err) => {
+      if (err) {
+        console.error(`   ❌ Download error for ${filename}:`, err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to send file' });
+        }
+      }
+    });
   } else {
-    console.warn(`   ⚠️ Not found`);
-    res.status(404).json({ error: 'File not found' });
-  }
-});
-
-// View TXT report in browser
-app.get('/api/view-txt/:filename', (req: any, res: any) => {
-  const { filename } = req.params;
-  const filePath = path.resolve(UI_REPORTS_DIR, filename);
-  if (fs.existsSync(filePath)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      res.json({ content });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  } else {
+    console.warn(`   ⚠️ Not found in .ui_reports or reports/`);
     res.status(404).json({ error: 'File not found' });
   }
 });
