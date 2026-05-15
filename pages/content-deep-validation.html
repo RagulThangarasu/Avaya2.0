@@ -280,21 +280,40 @@
       fetch('/api/logout', { method: 'POST' }).then(r => r.json()).then(() => { updateAemStatus(); closeLoginModal(); }).catch(err => alert('Error: ' + err.message));
     }
 
-    // Load saved URLs
-    fetch('/api/config').then(r => r.json()).then(data => {
-      document.getElementById('stageUrl').value = data.stage || '';
-      document.getElementById('prodUrl').value = data.production || '';
-    }).catch(() => {});
+    // ── Load Config ──────────────────────────────────────────
+    function loadConfig() {
+      fetch('/api/config')
+        .then(r => {
+          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) throw new Error('Not JSON');
+          return r.json();
+        })
+        .then(data => {
+          if (data.stage) document.getElementById('stageUrl').value = data.stage;
+          if (data.production) document.getElementById('prodUrl').value = data.production;
+        })
+        .catch(() => {
+          const stage = localStorage.getItem('avaya_stage_url');
+          const prod = localStorage.getItem('avaya_prod_url');
+          if (stage) document.getElementById('stageUrl').value = stage;
+          if (prod) document.getElementById('prodUrl').value = prod;
+        });
+    }
+    loadConfig();
 
     let eventSource = null;
     let currentJobId = null;
+
+    function setStatus(type, msg) {
+        const status = document.getElementById('status');
+        status.className = 'status ' + type;
+        status.innerHTML = msg;
+    }
 
     function runValidation() {
       const stageUrl = document.getElementById('stageUrl').value.trim();
       const prodUrl = document.getElementById('prodUrl').value.trim();
       if (!stageUrl || !prodUrl) { alert('Please enter both Stage and Production URLs'); return; }
 
-      const status = document.getElementById('status');
       const logContainer = document.getElementById('logContainer');
       const logOutput = document.getElementById('logOutput');
       const runBtn = document.getElementById('runBtn');
@@ -307,8 +326,7 @@
       document.getElementById('matchStatsContainer').style.display = 'none';
       logContainer.classList.add('visible');
       logOutput.textContent = '';
-      status.className = 'status running';
-      status.innerHTML = '<span class="spinner"></span> Running content validation… This may take several minutes.';
+      setStatus('running', '<span class="spinner"></span> Running content validation… This may take several minutes.');
 
       fetch('/api/run/deep-content-validation', {
         method: 'POST',
@@ -316,11 +334,15 @@
         body: JSON.stringify({ stage: stageUrl, production: prodUrl })
       }).then(r => r.json()).then(data => {
         if (data.error) {
-          status.className = 'status error';
-          status.textContent = '❌ ' + data.error;
-          runBtn.disabled = false; stopBtn.style.display = 'none';
+          setStatus('error', '❌ ' + data.error);
+          runBtn.disabled = false;
+          stopBtn.style.display = 'none';
           return;
         }
+
+        // Save locally
+        localStorage.setItem('avaya_stage_url', stageUrl);
+        localStorage.setItem('avaya_prod_url', prodUrl);
         currentJobId = data.jobId;
         eventSource = new EventSource('/api/logs/' + data.jobId);
         eventSource.onmessage = function(e) {
@@ -329,8 +351,7 @@
             logOutput.textContent += msg.data + '\n';
             logOutput.scrollTop = logOutput.scrollHeight;
           } else if (msg.type === 'done') {
-            status.className = 'status success';
-            status.textContent = '✅ Content validation complete! ' + (msg.summary || '');
+            setStatus('success', '✅ Content validation complete! ' + (msg.summary || ''));
 
             if (msg.reportFile) {
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
@@ -355,24 +376,25 @@
             runBtn.disabled = false; stopBtn.style.display = 'none';
             eventSource.close();
           } else if (msg.type === 'error') {
-            status.className = 'status error';
-            status.textContent = '❌ ' + msg.data;
+            setStatus('error', '❌ ' + msg.data);
             runBtn.disabled = false; stopBtn.style.display = 'none';
             eventSource.close();
           }
         };
         eventSource.onerror = function() {
-          if (status.className.includes('running')) {
-            status.className = 'status error';
-            status.textContent = '❌ Connection lost. Check terminal for results.';
-          }
+          setStatus('error', '❌ Connection lost. Check terminal for results.');
           runBtn.disabled = false; stopBtn.style.display = 'none';
           eventSource.close();
         };
-      }).catch(err => {
-        status.className = 'status error';
-        status.textContent = '❌ Failed to start: ' + err.message;
-        runBtn.disabled = false; stopBtn.style.display = 'none';
+      })
+      .catch(err => {
+        let errorMsg = err.message;
+        if (errorMsg.includes('Unexpected token') || errorMsg.includes('<html>')) {
+          errorMsg = 'Server Not Found. Validation requires the local server to be running (npm run server).';
+        }
+        setStatus('error', '❌ ' + errorMsg);
+        runBtn.disabled = false;
+        stopBtn.style.display = 'none';
       });
     }
 

@@ -238,13 +238,25 @@
     setInterval(updateAemStatus, 10000);
     document.getElementById('aemStatusBadge').addEventListener('click', openLoginModal);
 
-    // ── Load saved URLs ──────────────────────────────────────
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('stageUrl').value = data.stage || '';
-        document.getElementById('prodUrl').value = data.production || '';
-      }).catch(() => {});
+    // ── Load Config ──────────────────────────────────────────
+    function loadConfig() {
+      fetch('/api/config')
+        .then(r => {
+          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) throw new Error('Not JSON');
+          return r.json();
+        })
+        .then(data => {
+          if (data.stage) document.getElementById('stageUrl').value = data.stage;
+          if (data.production) document.getElementById('prodUrl').value = data.production;
+        })
+        .catch(() => {
+          const stage = localStorage.getItem('avaya_stage_url');
+          const prod = localStorage.getItem('avaya_prod_url');
+          if (stage) document.getElementById('stageUrl').value = stage;
+          if (prod) document.getElementById('prodUrl').value = prod;
+        });
+    }
+    loadConfig();
 
     // ── Validation ──────────────────────────────────────────
     let eventSource = null;
@@ -289,6 +301,10 @@
           stopBtn.style.display = 'none';
           return;
         }
+
+        // Save locally
+        localStorage.setItem('avaya_stage_url', stageUrl);
+        localStorage.setItem('avaya_prod_url', prodUrl);
         currentJobId = data.jobId;
         eventSource = new EventSource('/api/logs/' + data.jobId);
 
@@ -341,7 +357,11 @@
         };
       })
       .catch(err => {
-        setStatus('error', '❌ Failed to start: ' + err.message);
+        let errorMsg = err.message;
+        if (errorMsg.includes('Unexpected token') || errorMsg.includes('<html>')) {
+          errorMsg = 'Server Not Found. Validation requires the local server to be running (npm run server).';
+        }
+        setStatus('error', '❌ ' + errorMsg);
         runBtn.disabled = false;
         stopBtn.style.display = 'none';
       });
