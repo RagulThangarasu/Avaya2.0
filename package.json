@@ -25,9 +25,7 @@
     "clean:reports": "rm -rf reports test-results",
     "clean": "npm run clean:sessions && npm run clean:reports",
     "validate:toc": "python3 scripts/toc_validation_detailed.py",
-    "server": "npx tsx scripts/server.ts",
-    "start": "npx tsx scripts/server.ts",
-    "heroku-postbuild": "npx playwright install chromium"
+    "server": "npx tsx scripts/server.ts"
   },
   "keywords": [
     "playwright",
@@ -44,8 +42,7 @@
     "dotenv": "^17.3.1",
     "playwright": "^1.58.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "gh-pages": "^6.3.0"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
