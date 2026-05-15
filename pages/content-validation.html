@@ -390,14 +390,28 @@
         .catch(err => alert('Error: ' + err.message));
     }
 
-    // Load saved URLs
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('stageUrl').value = data.stage || '';
-        document.getElementById('prodUrl').value = data.production || '';
-      })
-      .catch(() => {});
+    // ── Load saved URLs ──────────────────────────────────────
+    function loadConfig() {
+      // 1. Try server config
+      fetch('/api/config')
+        .then(r => {
+          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) throw new Error('Not JSON');
+          return r.json();
+        })
+        .then(data => {
+          if (data.stage) document.getElementById('stageUrl').value = data.stage;
+          if (data.production) document.getElementById('prodUrl').value = data.production;
+        })
+        .catch(() => {
+          // 2. Fallback to localStorage for static hosting (GitHub Pages)
+          const stage = localStorage.getItem('avaya_stage_url');
+          const prod = localStorage.getItem('avaya_prod_url');
+          if (stage) document.getElementById('stageUrl').value = stage;
+          if (prod) document.getElementById('prodUrl').value = prod;
+          console.log('Using local storage fallback');
+        });
+    }
+    loadConfig();
 
     let eventSource = null;
     let currentJobId = null;
@@ -440,13 +454,17 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage: stageUrl, production: prodUrl })
       }).then(r => r.json()).then(data => {
-        if (data.error) {
+      if (data.error) {
           status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
           status.textContent = '❌ ' + data.error;
           runBtn.disabled = false;
           stopBtn.style.display = 'none';
           return;
         }
+        
+        // Save to localStorage as well for persistence on static hosts
+        localStorage.setItem('avaya_stage_url', stageUrl);
+        localStorage.setItem('avaya_prod_url', prodUrl);
         currentJobId = data.jobId;
         // Start streaming logs
         eventSource = new EventSource('/api/logs/' + data.jobId);
@@ -506,8 +524,12 @@
           eventSource.close();
         };
       }).catch(err => {
+        let errorMsg = err.message;
+        if (errorMsg.includes('Unexpected token') || errorMsg.includes('<html>')) {
+          errorMsg = 'Server Not Found. Validation requires the local server to be running (npm run server).';
+        }
         status.className = 'status error'; if(statusBadge){statusBadge.textContent='ERROR'; statusBadge.style.background='#f8d7da'; statusBadge.style.color='#721c24';}
-        status.textContent = '❌ Failed to start: ' + err.message;
+        status.textContent = '❌ ' + errorMsg;
         runBtn.disabled = false;
         stopBtn.style.display = 'none';
       });
