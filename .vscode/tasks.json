@@ -10,6 +10,16 @@
 			"label": "Auto Push to GitHub",
 			"type": "shell",
 			"command": "cd /Users/ragul/Desktop/Avayaa-2.0 && bash auto-push.sh"
+		},
+		{
+			"label": "Git Push to GitHub",
+			"type": "shell",
+			"command": "cd /Users/ragul/Desktop/Avayaa-2.0 && git add -A && git commit -m 'Hide AEM status badge across all pages - disable completely' && git push origin main"
+		},
+		{
+			"label": "Push to GitHub",
+			"type": "shell",
+			"command": "cd /Users/ragul/Desktop/Avayaa-2.0 && git add -A && git commit -m \"Hide AEM status badge across all pages + README update + content validation optimization\" && git push origin main && echo DONE"
 		}
 	]
 }
