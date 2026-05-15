@@ -134,12 +134,12 @@
       <h2>Configure URLs</h2>
       <div class="form-group">
         <label for="stageUrl">Publish URL</label>
-        <input type="url" id="stageUrl" placeholder="https://documentation.avaya.com/bundle/..." />
+        <input type="url" id="stageUrl" placeholder="https://documentation.avaya.com/bundle/..." autocomplete="off" />
         <div class="hint">AEM Publish URL</div>
       </div>
       <div class="form-group">
         <label for="prodUrl">Production URL</label>
-        <input type="url" id="prodUrl" placeholder="https://documentation.avaya.com/bundle/.../page/..." />
+        <input type="url" id="prodUrl" placeholder="https://documentation.avaya.com/bundle/.../page/..." autocomplete="off" />
         <div class="hint">Public production documentation URL</div>
       </div>
       <div class="actions">
@@ -399,15 +399,15 @@
           return r.json();
         })
         .then(data => {
-          if (data.stage) document.getElementById('stageUrl').value = data.stage;
-          if (data.production) document.getElementById('prodUrl').value = data.production;
+          if (data.stage && data.stage.startsWith('http')) document.getElementById('stageUrl').value = data.stage;
+          if (data.production && data.production.startsWith('http')) document.getElementById('prodUrl').value = data.production;
         })
         .catch(() => {
           // 2. Fallback to localStorage for static hosting (GitHub Pages)
           const stage = localStorage.getItem('avaya_stage_url');
           const prod = localStorage.getItem('avaya_prod_url');
-          if (stage) document.getElementById('stageUrl').value = stage;
-          if (prod) document.getElementById('prodUrl').value = prod;
+          if (stage && stage.startsWith('http')) document.getElementById('stageUrl').value = stage;
+          if (prod && prod.startsWith('http')) document.getElementById('prodUrl').value = prod;
           console.log('Using local storage fallback');
         });
     }
