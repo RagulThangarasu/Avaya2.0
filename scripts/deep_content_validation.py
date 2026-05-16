@@ -342,7 +342,6 @@ async def validate_content():
                 result = {
                     'Prod Sequence': idx,
                     'Stage Sequence': 'N/A',
-                    'Sequence Match': '❌',
                     'Content Match': '❌',
                     'Similarity %': '0%',
                     'Prod Title': prod_item['title'],
@@ -367,7 +366,6 @@ async def validate_content():
                     result = {
                         'Prod Sequence': idx,
                         'Stage Sequence': matched_stage['index'],
-                        'Sequence Match': '❌',
                         'Content Match': '❌',
                         'Similarity %': '0%',
                         'Prod Title': prod_data.get('title', 'Error'),
@@ -386,7 +384,6 @@ async def validate_content():
                 result = {
                     'Prod Sequence': idx,
                     'Stage Sequence': matched_stage['index'],
-                    'Sequence Match': '✅' if idx == matched_stage['index'] else '❌',
                     'Content Match': '✅' if is_match else '❌',
                     'Similarity %': f"{similarity * 100:.1f}%",
                     'Prod Title': prod_data['title'],
@@ -406,7 +403,6 @@ async def validate_content():
                 result = {
                     'Prod Sequence': idx,
                     'Stage Sequence': matched_stage['index'] if matched_stage else 'N/A',
-                    'Sequence Match': '❌',
                     'Content Match': '❌',
                     'Similarity %': '0%',
                     'Prod Title': prod_item['title'],
@@ -445,7 +441,6 @@ async def validate_content():
                     result = {
                         'Prod Sequence': 'N/A',
                         'Stage Sequence': cand['index'],
-                        'Sequence Match': '❌',
                         'Content Match': '❌',
                         'Similarity %': '0%',
                         'Prod Title': '[MISSING]',
