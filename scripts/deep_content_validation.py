@@ -418,7 +418,14 @@ async def validate_content():
                 
                 # Simple progress log
                 emoji = '✅' if is_match else '❌'
-                print(f"  [{idx}/{total}] {prod_item['title'][:50]:50s} {emoji} ({similarity*100:.1f}%)")
+                reason = ""
+                if not is_match:
+                    missing = list(comparison.get('missing_in_prod', set()))[:3]
+                    extra = list(comparison.get('extra_in_prod', set()))[:3]
+                    if missing: reason += f" | Missing: {', '.join(missing)}"
+                    if extra: reason += f" | Extra: {', '.join(extra)}"
+                
+                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} {emoji} ({similarity*100:.1f}%){reason}")
                 
                 return 'match' if is_match else 'mismatch', result
                 
