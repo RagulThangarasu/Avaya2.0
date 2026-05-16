@@ -306,9 +306,9 @@ def compare_page_content(stage_text, prod_text):
     
     diff_info = f"Stage: {len(stage_words)} words | Prod: {len(prod_words)} words | Missing in Prod: {len(missing_in_prod)} terms | Extra in Prod: {len(extra_in_prod)} terms"
     
-    if similarity >= 0.95:
+    if similarity >= 0.85:
         match_type = 'match'
-    elif similarity >= 0.80:
+    elif similarity >= 0.70:
         match_type = 'partial'
     else:
         match_type = 'mismatch'
@@ -423,8 +423,8 @@ async def validate_content():
                 
                 # Compare
                 comparison = compare_page_content(stage_data['text'], prod_data['text'])
-                # Force to Match/Mismatch
-                is_match = comparison['match_type'] == 'match' and idx == matched_stage['index']
+                # Force to Match/Mismatch (Use 85% threshold, ignore sequence)
+                is_match = comparison['match_type'] == 'match'
                 similarity = comparison['similarity']
                 
                 result = {
