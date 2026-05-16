@@ -384,8 +384,6 @@ async def validate_content():
             if not stage_url:
                 # Missing in stage
                 result = {
-                    'Prod Sequence': idx,
-                    'Stage Sequence': 'N/A',
                     'Content Match': '❌',
                     'Similarity %': '0%',
                     'Prod Title': prod_item['title'],
@@ -408,8 +406,6 @@ async def validate_content():
                 
                 if stage_data['status'] == 'error' or prod_data['status'] == 'error':
                     result = {
-                        'Prod Sequence': idx,
-                        'Stage Sequence': matched_stage['index'],
                         'Content Match': '❌',
                         'Similarity %': '0%',
                         'Prod Title': prod_data.get('title', 'Error'),
@@ -426,8 +422,6 @@ async def validate_content():
                 similarity = comparison['similarity']
                 
                 result = {
-                    'Prod Sequence': idx,
-                    'Stage Sequence': matched_stage['index'],
                     'Content Match': '✅' if is_match else '❌',
                     'Similarity %': f"{similarity * 100:.1f}%",
                     'Prod Title': prod_data['title'],
@@ -452,8 +446,6 @@ async def validate_content():
             except Exception as e:
                 print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} 🚨 EXCEPTION")
                 result = {
-                    'Prod Sequence': idx,
-                    'Stage Sequence': matched_stage['index'] if matched_stage else 'N/A',
                     'Content Match': '❌',
                     'Similarity %': '0%',
                     'Prod Title': prod_item['title'],
@@ -490,8 +482,6 @@ async def validate_content():
             for cand in candidates:
                 if not cand['used']:
                     result = {
-                        'Prod Sequence': 'N/A',
-                        'Stage Sequence': cand['index'],
                         'Content Match': '❌',
                         'Similarity %': '0%',
                         'Prod Title': '[MISSING]',

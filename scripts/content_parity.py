@@ -213,8 +213,6 @@ async def run_validation():
                     issue = f"Differences in: {', '.join(reasons)}"
                 
                 comparison.append({
-                    'Prod Sequence': prod_idx + 1,
-                    'Stage Sequence': stage_idx + 1,
                     'Content Match': '✅' if title_match else '❌',
                     'Prod Title': prod_item['title'],
                     'Stage Title': stage_item['title'],
@@ -224,8 +222,6 @@ async def run_validation():
             else:
                 # Missing in stage
                 comparison.append({
-                    'Prod Sequence': prod_idx + 1,
-                    'Stage Sequence': '-',
                     'Content Match': '❌',
                     'Prod Title': prod_item['title'],
                     'Stage Title': '[MISSING]',
@@ -240,8 +236,6 @@ async def run_validation():
                     stage_idx = cand['idx']
                     stage_item = cand['item']
                     comparison.append({
-                    'Prod Sequence': '-',
-                    'Stage Sequence': stage_idx + 1,
                     'Content Match': '❌',
                     'Prod Title': '[MISSING]',
                     'Stage Title': stage_item['title'],
