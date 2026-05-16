@@ -296,6 +296,8 @@ def compare_page_content(stage_text, prod_text):
         'prod_length': len(prod_norm),
         'stage_words': len(stage_words),
         'prod_words': len(prod_words),
+        'missing_in_prod': missing_in_prod,
+        'extra_in_prod': extra_in_prod,
         'missing_in_prod_count': len(missing_in_prod),
         'extra_in_prod_count': len(extra_in_prod),
         'missing_sample': missing_sample,
