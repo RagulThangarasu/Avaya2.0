@@ -213,6 +213,9 @@ async def run_validation():
                     issue = f"Differences in: {', '.join(reasons)}"
                 
                 comparison.append({
+                    'Prod Sequence': prod_idx + 1,
+                    'Stage Sequence': stage_idx + 1,
+                    'Sequence Match': '✅' if same_position else '❌',
                     'Content Match': '✅' if title_match else '❌',
                     'Prod Title': prod_item['title'],
                     'Stage Title': stage_item['title'],
@@ -222,6 +225,9 @@ async def run_validation():
             else:
                 # Missing in stage
                 comparison.append({
+                    'Prod Sequence': prod_idx + 1,
+                    'Stage Sequence': '-',
+                    'Sequence Match': '❌',
                     'Content Match': '❌',
                     'Prod Title': prod_item['title'],
                     'Stage Title': '[MISSING]',
@@ -236,6 +242,9 @@ async def run_validation():
                     stage_idx = cand['idx']
                     stage_item = cand['item']
                     comparison.append({
+                    'Prod Sequence': '-',
+                    'Stage Sequence': stage_idx + 1,
+                    'Sequence Match': '❌',
                     'Content Match': '❌',
                     'Prod Title': '[MISSING]',
                     'Stage Title': stage_item['title'],
@@ -245,7 +254,7 @@ async def run_validation():
 
         # ── Calculate Stats ──────────────────────────────────────────
         total = len(comparison)
-        full_match = len([r for r in comparison if r['Content Match'] == '✅'])
+        full_match = len([r for r in comparison if r['Content Match'] == '✅' and r['Sequence Match'] == '✅'])
         mismatch = total - full_match
         match_pct = int(full_match / max(total, 1) * 100)
 
