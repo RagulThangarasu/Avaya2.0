@@ -167,6 +167,12 @@ async def get_page_text(page, url, is_prod=False):
         # Determine root container
         root_selector = '.zDocsTopicPageBody' if is_prod else '.topic-renderer__content'
         
+        # Wait for content container
+        try:
+            await page.wait_for_selector(root_selector, timeout=5000)
+        except:
+            pass
+            
         # Extract content with bold formatting and strict whitespace normalization
         text = await page.evaluate('''(selector) => {
             const results = [];
@@ -201,9 +207,9 @@ async def get_page_text(page, url, is_prod=False):
 
             const root = document.querySelector(selector) || document.body;
             
-            // Extract h2, h3, and p - check they're not in excluded areas
-            root.querySelectorAll('h2, h3, p').forEach(el => {
-                // Skip if in header, footer, nav, or specific UI components
+            // Extract h2, h3, p, and list items (li, dt, dd)
+            root.querySelectorAll('h2, h3, p, li, dt, dd, caption').forEach(el => {
+                // Skip if in header, footer, or nav (safety check even within root)
                 let parent = el.parentElement;
                 let inExcluded = false;
                 for (let i = 0; i < 15; i++) {
