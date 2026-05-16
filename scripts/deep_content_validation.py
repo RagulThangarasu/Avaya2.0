@@ -164,10 +164,32 @@ async def get_page_text(page, url):
         await handle_cookies(page)
         await page.wait_for_timeout(300)
         
-        # Extract only h2, h3, and paragraph content (skip header, footer, nav, h1)
+        # Extract content with bold formatting and strict whitespace normalization
         text = await page.evaluate('''() => {
             const results = [];
+            const noise = ["was this page helpful?", "helpful?", "options", "export", "feedback", "back", "network", "j189", "locking", "better"];
             
+            function getFormattedText(node) {
+                let result = '';
+                for (let child of node.childNodes) {
+                    if (child.nodeType === 3) { // TEXT_NODE
+                        result += child.textContent;
+                    } else if (child.nodeType === 1) { // ELEMENT_NODE
+                        const tag = child.tagName.toLowerCase();
+                        const style = window.getComputedStyle(child);
+                        const isBold = tag === 'strong' || tag === 'b' || style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 700;
+                        
+                        let childText = getFormattedText(child);
+                        if (isBold && childText.trim()) {
+                            result += `[BOLD:${childText}]`;
+                        } else {
+                            result += childText;
+                        }
+                    }
+                }
+                return result;
+            }
+
             // Extract h2, h3, and p - check they're not in excluded areas
             document.querySelectorAll('h2, h3, p').forEach(el => {
                 // Skip if in header, footer, or nav
@@ -184,12 +206,14 @@ async def get_page_text(page, url):
                 }
                 
                 if (!inExcluded) {
-                    const text = el.innerText.trim();
-                    const noise = ["was this page helpful?", "helpful?", "options", "export", "feedback", "back", "network", "j189", "locking", "better"];
-                    if (text && text.length > 0) {
-                        const lowText = text.toLowerCase();
-                        if (!noise.some(n => lowText === n || (lowText.includes(n) && text.length < 50))) {
-                            results.push(text);
+                    const rawText = getFormattedText(el).trim();
+                    if (rawText.length > 0) {
+                        const lowText = rawText.toLowerCase();
+                        // Filter out boilerplate
+                        if (!noise.some(n => lowText === n || (lowText.includes(n) && rawText.length < 50))) {
+                            // Normalize multiple spaces within text, but keep quotes
+                            const cleanText = rawText.replace(/\s+/g, ' ').trim();
+                            results.push(cleanText);
                         }
                     }
                 }
