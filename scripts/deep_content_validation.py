@@ -185,8 +185,12 @@ async def get_page_text(page, url):
                 
                 if (!inExcluded) {
                     const text = el.innerText.trim();
+                    const noise = ["was this page helpful?", "helpful?", "options", "export", "feedback", "back", "network", "j189", "locking", "better"];
                     if (text && text.length > 0) {
-                        results.push(text);
+                        const lowText = text.toLowerCase();
+                        if (!noise.some(n => lowText === n || (lowText.includes(n) && text.length < 50))) {
+                            results.push(text);
+                        }
                     }
                 }
             });
@@ -361,22 +365,15 @@ async def validate_content():
                 
                 if stage_data['status'] == 'error' or prod_data['status'] == 'error':
                     result = {
-                        'Stage Title': stage_data.get('title', 'Error'),
-                        'Prod Title': prod_data.get('title', 'Error'),
-                        'Stage URL': stage_url,
-                        'Prod URL': prod_url,
                         'Prod Sequence': idx,
                         'Stage Sequence': matched_stage['index'],
-                        'Sequence Match': '✅ Yes' if idx == matched_stage['index'] else f'❌ No (Prod:{idx} vs Stage:{matched_stage["index"]})',
-                        'Match Type': 'ERROR',
-                        'Similarity': '0%',
-                        'Stage Word Count': 0,
-                        'Prod Word Count': 0,
-                        'Missing in Prod': 0,
-                        'Extra in Prod': 0,
-                        'Sample Missing Terms': 'Error fetching page',
-                        'Sample Extra Terms': '',
-                        'Status': 'FAILED'
+                        'Sequence Match': '❌',
+                        'Content Match': '❌',
+                        'Similarity %': '0%',
+                        'Prod Title': prod_data.get('title', 'Error'),
+                        'Stage Title': stage_data.get('title', 'Error'),
+                        'Prod URL': prod_url,
+                        'Stage URL': stage_url
                     }
                     return 'error', result
                 
@@ -407,22 +404,15 @@ async def validate_content():
             except Exception as e:
                 print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} 🚨 EXCEPTION")
                 result = {
-                    'Stage Title': 'Error',
-                    'Prod Title': prod_item['title'],
-                    'Stage URL': stage_url or 'N/A',
-                    'Prod URL': prod_url,
                     'Prod Sequence': idx,
                     'Stage Sequence': matched_stage['index'] if matched_stage else 'N/A',
-                    'Sequence Match': '❌ No',
-                    'Match Type': 'ERROR',
-                    'Similarity': '0%',
-                    'Stage Word Count': 0,
-                    'Prod Word Count': 0,
-                    'Missing in Prod': 0,
-                    'Extra in Prod': 0,
-                    'Sample Missing Terms': str(e)[:50],
-                    'Sample Extra Terms': '',
-                    'Status': 'FAILED'
+                    'Sequence Match': '❌',
+                    'Content Match': '❌',
+                    'Similarity %': '0%',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': 'Error',
+                    'Prod URL': prod_url,
+                    'Stage URL': stage_url or 'N/A'
                 }
                 return 'error', result
         
