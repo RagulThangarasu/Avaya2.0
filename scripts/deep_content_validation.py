@@ -167,7 +167,7 @@ async def get_page_text(page, url):
         # Extract content with bold formatting and strict whitespace normalization
         text = await page.evaluate('''() => {
             const results = [];
-            const noise = ["was this page helpful?", "helpful?", "options", "export", "feedback", "back", "network", "j189", "locking", "better"];
+            const noise = ["was this page helpful?", "helpful?", "options", "export", "feedback", "back", "network", "j189", "locking", "better", "share", "page", "address", "next", "entering"];
             
             function getFormattedText(node) {
                 let result = '';
