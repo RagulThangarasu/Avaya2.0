@@ -197,13 +197,20 @@ async def get_page_text(page, url):
 
             // Extract h2, h3, and p - check they're not in excluded areas
             document.querySelectorAll('h2, h3, p').forEach(el => {
-                // Skip if in header, footer, or nav
+                // Skip if in header, footer, nav, or specific UI components
                 let parent = el.parentElement;
                 let inExcluded = false;
-                for (let i = 0; i < 10; i++) {
+                for (let i = 0; i < 15; i++) {
                     if (!parent) break;
                     const tag = parent.tagName.toLowerCase();
-                    if (tag === 'header' || tag === 'footer' || tag === 'nav') {
+                    const className = parent.className.toLowerCase();
+                    const id = parent.id.toLowerCase();
+                    
+                    if (tag === 'header' || tag === 'footer' || tag === 'nav' || 
+                        className.includes('breadcrumb') || className.includes('toolbar') || 
+                        className.includes('metadata') || className.includes('tag') ||
+                        className.includes('search') || className.includes('filter') ||
+                        id.includes('search') || id.includes('filter')) {
                         inExcluded = true;
                         break;
                     }
