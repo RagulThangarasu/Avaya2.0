@@ -157,15 +157,18 @@ def extract_text_content(page_html):
     except Exception as e:
         return page_html
 
-async def get_page_text(page, url):
-    """Fetch and extract text from page (h2, h3, paragraphs only - skip header, footer, nav, h1)."""
+async def get_page_text(page, url, is_prod=False):
+    """Fetch and extract text from page (h2, h3, paragraphs only)."""
     try:
         await page.goto(url, wait_until='networkidle', timeout=30000)
         await handle_cookies(page)
         await page.wait_for_timeout(300)
         
+        # Determine root container
+        root_selector = '.zDocsTopicPageBody' if is_prod else '.topic-renderer__content'
+        
         # Extract content with bold formatting and strict whitespace normalization
-        text = await page.evaluate('''() => {
+        text = await page.evaluate('''(selector) => {
             const results = [];
             const noise = [
                 "was this page helpful?", "helpful?", "options", "export", "feedback", 
@@ -196,13 +199,15 @@ async def get_page_text(page, url):
                 return result;
             }
 
+            const root = document.querySelector(selector) || document.body;
+            
             // Extract h2, h3, and p - check they're not in excluded areas
-            document.querySelectorAll('h2, h3, p').forEach(el => {
+            root.querySelectorAll('h2, h3, p').forEach(el => {
                 // Skip if in header, footer, nav, or specific UI components
                 let parent = el.parentElement;
                 let inExcluded = false;
                 for (let i = 0; i < 15; i++) {
-                    if (!parent) break;
+                    if (!parent || parent === root) break;
                     const tag = parent.tagName.toLowerCase();
                     const className = parent.className.toLowerCase();
                     const id = parent.id.toLowerCase();
@@ -233,7 +238,7 @@ async def get_page_text(page, url):
             });
             
             return results.join(' ');
-        }''')
+        }''', root_selector)
         
         return {
             'url': url,
@@ -395,8 +400,8 @@ async def validate_content():
                 s_page = await stage_ctx.new_page()
                 p_page = await prod_ctx.new_page()
                 
-                stage_data = await get_page_text(s_page, stage_url)
-                prod_data = await get_page_text(p_page, prod_url)
+                stage_data = await get_page_text(s_page, stage_url, is_prod=False)
+                prod_data = await get_page_text(p_page, prod_url, is_prod=True)
                 
                 await s_page.close()
                 await p_page.close()
