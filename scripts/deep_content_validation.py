@@ -171,7 +171,8 @@ async def get_page_text(page, url):
                 "was this page helpful?", "helpful?", "options", "export", "feedback", 
                 "back", "network", "j189", "locking", "better", "share", "page", 
                 "address", "next", "entering", "get", "usb", "j100", "single", 
-                "anonymous", "filters", "pin", "email", "filter"
+                "anonymous", "filters", "pin", "email", "filter", "stay", 
+                "display", "history", "components"
             ];
             
             function getFormattedText(node) {
