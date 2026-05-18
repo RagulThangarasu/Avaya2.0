@@ -63,23 +63,36 @@ async def extract_prod_toc(page, base_url):
     """Extract TOC from Production (documentation.avaya.com)."""
     await page.wait_for_load_state("networkidle")
     await handle_cookies(page)
+    await page.wait_for_timeout(3000)
 
     try:
+        # 1. Click "Expand All" button if available
         expand_btn = page.locator('.zDocsCollapseExpandButton').first
         if await expand_btn.is_visible(timeout=5000):
             await expand_btn.click()
             await page.wait_for_timeout(5000)
-        
-        expand_icons = await page.locator('.zDocsTocCollapseItemButton, .expand-icon, button[aria-expanded="false"]').all()
-        for icon in expand_icons[:100]:
-            try:
-                await icon.click(timeout=300)
-            except: pass
-        await page.wait_for_timeout(3000)
     except:
         pass
 
-    links_data = await page.evaluate('''() => {
+    # 2. Iteratively expand nested nodes up to 5 levels deep to capture full sequence
+    for level in range(5):
+        try:
+            collapse_nodes = await page.locator('.zDocsTocCollapseItemButton[aria-expanded="false"], button[aria-expanded="false"], .expand-icon').all()
+            if not collapse_nodes:
+                break
+            print(f"   [Level {level+1}] Expanding {len(collapse_nodes)} nested nodes...")
+            for node in collapse_nodes[:120]:
+                try:
+                    await node.click(timeout=800)
+                    await page.wait_for_timeout(50)
+                except:
+                    pass
+            await page.wait_for_timeout(2000)
+        except Exception as e:
+            print(f"   [Level {level+1}] Expand warning: {e}")
+            break
+
+    links_data = await page.evaluate(r'''() => {
         const results = [];
         const container = document.querySelector('.zDocsTocList') || document.querySelector('.zDocsTOC');
         let allLinks = [];
@@ -91,7 +104,9 @@ async def extract_prod_toc(page, base_url):
         }
         allLinks.forEach(a => {
             const href = a.getAttribute('href');
-            const text = a.innerText.trim();
+            let text = a.innerText.trim();
+            // Clean up titles (remove leading/trailing symbols, newlines, tabs, chevron chars)
+            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
             if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
                 results.push({text, href});
             }
@@ -117,12 +132,28 @@ async def extract_stage_toc(page, base_url):
     await handle_cookies(page)
     await page.wait_for_timeout(2000)
 
-    links_data = await page.evaluate('''() => {
+    # Iteratively expand collapsible nested items on Stage to match sequences
+    for level in range(3):
+        try:
+            collapse_nodes = await page.locator('.cmp-navigation__item--active[aria-expanded="false"], .cmp-navigation__item[aria-expanded="false"], button[aria-expanded="false"]').all()
+            if not collapse_nodes:
+                break
+            for node in collapse_nodes[:50]:
+                try:
+                    await node.click(timeout=800)
+                except:
+                    pass
+            await page.wait_for_timeout(1000)
+        except:
+            break
+
+    links_data = await page.evaluate(r'''() => {
         const results = [];
         const links = document.querySelectorAll('.cmp-navigation__item-link');
         links.forEach(a => {
             const href = a.getAttribute('href');
-            const text = a.innerText.trim();
+            let text = a.innerText.trim();
+            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
             if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
                 results.push({text, href});
             }

@@ -627,6 +627,12 @@
               downloadBtn.href = '/api/download/' + msg.reportFile;
               downloadBtn.download = msg.reportFile;
             }
+            
+            // Show PDF Download button
+            const pdfDownloadBtn = document.getElementById('pdfDownloadBtn');
+            if (pdfDownloadBtn) {
+              pdfDownloadBtn.style.display = 'inline-flex';
+            }
 
             reportLink.style.display = 'block';
             reportLink.scrollIntoView({ behavior: 'smooth' });

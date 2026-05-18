@@ -95,6 +95,7 @@
     <a href="content-deep-validation.html" class="active">Content Validation</a>
     <a href="broken-links.html">Broken Links</a>
     <a href="pdf-validation.html">PDF</a>
+    <a href="extra-products.html">Extra Products</a>
   </div>
 
   <div class="container">
@@ -128,58 +129,148 @@
 
       <div class="status" id="status"></div>
 
-      <!-- Match Stats -->
-      <div id="matchStatsContainer" style="display:none; margin-top:20px;">
-        <h3 style="font-size:15px; color:#232527; margin-bottom:12px;">📊 Content Match Statistics</h3>
-        <div style="margin-bottom:15px;">
-          <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; font-weight:600;">
-            <span>Overall Progress</span>
-            <span id="progress-count">0 / 0</span>
+      <!-- Match Stats / Markdown Parity Statistics -->
+      <div id="matchStatsContainer" style="display:none; margin-top:20px; border-top: 2px solid #da291c; padding-top: 20px;">
+        <h3 style="font-size:18px; color:#232527; margin-bottom:18px; display: flex; align-items: center; gap: 8px; font-weight: 700;">
+          📊 Markdown Extraction & Parity Statistics
+        </h3>
+        
+        <!-- Main Stats Grid -->
+        <div class="stats-comparison-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+          <!-- Stage MD Extraction Status Card -->
+          <div class="card" style="margin-bottom:0; border-left: 5px solid #3498db; background: #fafbfc; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); border-top:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h4 style="font-size:15px; color:#2c3e50; font-weight:700; margin:0;">Stage MD Extraction Status</h4>
+              <span id="stageMdStatus" style="font-size:11px; font-weight:bold; background:#d4edda; color:#155724; padding:3px 10px; border-radius:12px; border:1px solid #c3e6cb;">COMPLETED</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr; gap:10px; font-size:13px; color:#555;">
+              <div>📂 Topics Extracted: <strong id="stageTopicsCount" style="color:#232527;">0</strong></div>
+              <div>📝 Word Count: <strong id="stageWordCount" style="color:#232527;">0</strong> words</div>
+              <div>🔤 Bold Blocks: <strong id="stageBoldCount" style="color:#232527;">0</strong></div>
+              <div>✨ Italic Blocks: <strong id="stageItalicCount" style="color:#232527;">0</strong></div>
+              <div>🔗 Inline Links: <strong id="stageLinksCount" style="color:#232527;">0</strong></div>
+              <div>📏 Total Length: <strong id="stageCharCount" style="color:#232527;">0</strong> chars</div>
+            </div>
           </div>
-          <div style="height:10px; background:#eee; border-radius:5px; overflow:hidden;">
-            <div id="bar-progress" style="height:100%; width:0%; background:#3498db; transition:width 0.5s ease-out; border-radius:5px;"></div>
+
+          <!-- Production MD Extraction Status Card -->
+          <div class="card" style="margin-bottom:0; border-left: 5px solid #e67e22; background: #fafbfc; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); border-top:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h4 style="font-size:15px; color:#2c3e50; font-weight:700; margin:0;">Production MD Extraction Status</h4>
+              <span id="prodMdStatus" style="font-size:11px; font-weight:bold; background:#d4edda; color:#155724; padding:3px 10px; border-radius:12px; border:1px solid #c3e6cb;">COMPLETED</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr; gap:10px; font-size:13px; color:#555;">
+              <div>📂 Topics Extracted: <strong id="prodTopicsCount" style="color:#232527;">0</strong></div>
+              <div>📝 Word Count: <strong id="prodWordCount" style="color:#232527;">0</strong> words</div>
+              <div>🔤 Bold Blocks: <strong id="prodBoldCount" style="color:#232527;">0</strong></div>
+              <div>✨ Italic Blocks: <strong id="prodItalicCount" style="color:#232527;">0</strong></div>
+              <div>🔗 Inline Links: <strong id="prodLinksCount" style="color:#232527;">0</strong></div>
+              <div>📏 Total Length: <strong id="prodCharCount" style="color:#232527;">0</strong> chars</div>
+            </div>
           </div>
         </div>
-        <div class="stats-grid">
-          <div class="stat-badge match">
-            <span class="stat-num" id="stat-match">0</span>
-            <span class="stat-label">✅ Match</span>
+
+        <!-- Parity Progress and Similarity Score -->
+        <div class="card" style="border-left: 5px solid #27ae60; background: #fff; padding: 22px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border-top:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div>
+              <h4 style="font-size:16px; color:#232527; font-weight:700; margin:0;">TOC Content Parity Score</h4>
+              <p style="font-size:12px; color:#777; margin:2px 0 0 0;">Similarity ratio based on line-by-line unified sequence matching</p>
+            </div>
+            <span id="stat-overall" style="font-size:36px; font-weight:800; color:#27ae60; line-height:1;">0%</span>
           </div>
-          <div class="stat-badge partial">
-            <span class="stat-num" id="stat-partial">0</span>
-            <span class="stat-label">⚠️ Partial</span>
+          <div style="height:12px; background:#f0f2f5; border-radius:6px; overflow:hidden; margin-bottom:18px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);">
+            <div id="bar-overall" style="height:100%; width:0%; background:linear-gradient(90deg, #2ecc71, #27ae60); transition:width 1.2s ease-out; border-radius:6px;"></div>
           </div>
-          <div class="stat-badge mismatch">
-            <span class="stat-num" id="stat-mismatch">0</span>
-            <span class="stat-label">❌ Mismatch</span>
-          </div>
-        </div>
-        <div style="margin-top:16px;">
-          <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; font-weight:600;">
-            <span>Overall Content Match</span>
-            <span id="stat-overall">0%</span>
-          </div>
-          <div style="height:10px; background:#eee; border-radius:5px; overflow:hidden;">
-            <div id="bar-overall" style="height:100%; width:0%; background:#27ae60; transition:width 1s ease-out; border-radius:5px;"></div>
+          
+          <!-- Metrics Drift Table -->
+          <h5 style="font-size:13px; font-weight:700; color:#333; margin-bottom:12px; border-bottom: 1px solid #edf2f7; padding-bottom: 6px;">📉 Parity Metrics Drift Analysis</h5>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+              <thead>
+                <tr style="border-bottom: 2px solid #edf2f7; color:#718096; font-weight:600;">
+                  <th style="padding:8px 6px;">Metric</th>
+                  <th style="padding:8px 6px; text-align:center;">Stage</th>
+                  <th style="padding:8px 6px; text-align:center;">Production</th>
+                  <th style="padding:8px 6px; text-align:center;">Variance</th>
+                  <th style="padding:8px 6px; text-align:center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom: 1px solid #edf2f7;">
+                  <td style="padding:8px 6px; font-weight:600;">Word Count</td>
+                  <td id="tdStageWords" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdProdWords" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdVarWords" style="padding:8px 6px; text-align:center; font-weight:600;">0</td>
+                  <td id="tdStatusWords" style="padding:8px 6px; text-align:center;">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #edf2f7;">
+                  <td style="padding:8px 6px; font-weight:600;">Character Count</td>
+                  <td id="tdStageChars" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdProdChars" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdVarChars" style="padding:8px 6px; text-align:center; font-weight:600;">0</td>
+                  <td id="tdStatusChars" style="padding:8px 6px; text-align:center;">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #edf2f7;">
+                  <td style="padding:8px 6px; font-weight:600;">Bold Text Blocks</td>
+                  <td id="tdStageBold" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdProdBold" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdVarBold" style="padding:8px 6px; text-align:center; font-weight:600;">0</td>
+                  <td id="tdStatusBold" style="padding:8px 6px; text-align:center;">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #edf2f7;">
+                  <td style="padding:8px 6px; font-weight:600;">Italic Text Blocks</td>
+                  <td id="tdStageItalic" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdProdItalic" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdVarItalic" style="padding:8px 6px; text-align:center; font-weight:600;">0</td>
+                  <td id="tdStatusItalic" style="padding:8px 6px; text-align:center;">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #edf2f7;">
+                  <td style="padding:8px 6px; font-weight:600;">Inline Links Count</td>
+                  <td id="tdStageLinks" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdProdLinks" style="padding:8px 6px; text-align:center;">0</td>
+                  <td id="tdVarLinks" style="padding:8px 6px; text-align:center; font-weight:600;">0</td>
+                  <td id="tdStatusLinks" style="padding:8px 6px; text-align:center;">-</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
+      <!-- Report Download Links -->
       <div class="report-link" id="reportLink">
         <h3 style="margin-bottom:15px; color:#27ae60; display:flex; align-items:center; gap:8px; font-size:16px;">
           ✨ Reports Generated Successfully
         </h3>
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-          <a id="xlsxDownloadBtn" href="#" download="content-deep-validation-report.xlsx"
+          <a id="downloadReportBtn" href="/api/download/md_comparison_report.md" download="md_comparison_report.md"
              style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#232527;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.15);">
-            📊 Download Excel Report
+            📄 Download Comparison Report (.md)
           </a>
-          <button id="viewReportBtn" onclick="openReportViewer()"
-             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#4a4a4a;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
-            👁️ View Online Report
+          <button id="viewReportBtn" onclick="openReportViewer('md_comparison_report.md', '📊 Markdown Comparison Report')"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#da291c;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(218,41,28,0.2);">
+            👁️ View Comparison Report
+          </button>
+          <button id="viewStageMdBtn" onclick="openReportViewer('stage_topics.md', '📄 Stage Consolidated Markdown')"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#3498db;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(52,152,219,0.2);">
+            👁️ View Stage Markdown
+          </button>
+          <button id="viewProdMdBtn" onclick="openReportViewer('prod_topics.md', '📄 Production Consolidated Markdown')"
+             style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#e67e22;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(230,126,34,0.2);">
+            👁️ View Production Markdown
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- Markdown Viewer Container -->
+    <div id="markdownViewerContainer" class="card" style="display:none; max-width: 100%; overflow-x: auto; border-top: 3px solid #da291c;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:12px;">
+        <h2 id="markdownViewerTitle" style="margin-bottom:0; font-size:18px; color:#232527;">📄 Markdown Viewer</h2>
+        <button onclick="closeMarkdownViewer()" style="background:none; border:none; color:#e74c3c; cursor:pointer; font-weight:bold; font-size: 18px;">Close ✖</button>
+      </div>
+      <div id="markdownViewerContent" style="background:#1e1e1e; color:#d4d4d4; padding:20px; border-radius:8px; font-family:'Fira Code', Consolas, monospace; font-size:13px; max-height: 600px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; border-left: 4px solid #da291c;"></div>
     </div>
 
     <div class="log-container" id="logContainer">
@@ -364,25 +455,18 @@
           } else if (msg.type === 'done') {
             setStatus('success', '✅ Content validation complete! ' + (msg.summary || ''));
 
-            if (msg.reportFile) {
-              const downloadBtn = document.getElementById('xlsxDownloadBtn');
-              downloadBtn.href = '/api/download/' + msg.reportFile;
-              downloadBtn.download = msg.reportFile;
-            }
-
             reportLink.style.display = 'block';
             reportLink.scrollIntoView({ behavior: 'smooth' });
 
             if (msg.results) renderMatchStats(msg.results);
 
-            if (msg.reportFile) {
-              const a = document.createElement('a');
-              a.href = '/api/download/' + msg.reportFile;
-              a.download = msg.reportFile;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-            }
+            // Auto-download the Markdown comparison report
+            const a = document.createElement('a');
+            a.href = '/api/download/md_comparison_report.md';
+            a.download = 'md_comparison_report.md';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
 
             runBtn.disabled = false; stopBtn.style.display = 'none';
             eventSource.close();
@@ -418,46 +502,127 @@
       document.getElementById('stopBtn').style.display = 'none';
     }
 
-    function openReportViewer() {
-      const url = 'report-viewer.html?type=deep-content-validation' + (currentJobId ? '&jobId=' + currentJobId : '');
-      window.open(url, '_blank');
+    function openReportViewer(filename, title) {
+      const container = document.getElementById('markdownViewerContainer');
+      const titleEl = document.getElementById('markdownViewerTitle');
+      const contentEl = document.getElementById('markdownViewerContent');
+      
+      titleEl.textContent = title;
+      contentEl.innerHTML = '<span class="spinner"></span> Loading document content...';
+      container.style.display = 'block';
+      container.scrollIntoView({ behavior: 'smooth' });
+      
+      fetch('/reports/' + filename)
+        .then(r => {
+          if (!r.ok) throw new Error('Failed to load file');
+          return r.text();
+        })
+        .then(markdown => {
+          if (filename.includes('comparison')) {
+            contentEl.innerHTML = renderMarkdownToHtml(markdown);
+          } else {
+            contentEl.textContent = markdown;
+          }
+        })
+        .catch(err => {
+          contentEl.innerHTML = '<span style="color:#ff7675;">❌ Error: ' + err.message + '</span>';
+        });
+    }
+
+    function closeMarkdownViewer() {
+      document.getElementById('markdownViewerContainer').style.display = 'none';
+    }
+
+    function renderMarkdownToHtml(markdown) {
+      let html = markdown
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      const lines = html.split('\n');
+      const highlightedLines = lines.map(line => {
+        const trimmed = line.trim();
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          return `<div style="background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; padding: 2px 8px; font-family: monospace; border-left: 3px solid #2ecc71; margin: 1px 0;">${line}</div>`;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          return `<div style="background-color: rgba(231, 76, 60, 0.15); color: #ea868f; padding: 2px 8px; font-family: monospace; border-left: 3px solid #e74c3c; margin: 1px 0;">${line}</div>`;
+        } else if (line.startsWith('@@')) {
+          return `<div style="color: #c5a3e8; background-color: rgba(155, 89, 182, 0.1); padding: 4px 8px; font-family: monospace; font-weight: bold; margin: 4px 0;">${line}</div>`;
+        }
+        
+        if (trimmed.startsWith('# ')) {
+          return `<h1 style="color: #fff; font-size: 20px; border-bottom: 1px solid #444; padding-bottom: 8px; margin: 20px 0 10px 0;">${trimmed.substring(2)}</h1>`;
+        } else if (trimmed.startsWith('## ')) {
+          return `<h2 style="color: #fff; font-size: 16px; margin: 15px 0 8px 0;">${trimmed.substring(3)}</h2>`;
+        } else if (trimmed.startsWith('### ')) {
+          return `<h3 style="color: #eee; font-size: 14px; margin: 12px 0 6px 0;">${trimmed.substring(4)}</h3>`;
+        } else if (trimmed.startsWith('> ')) {
+          return `<blockquote style="border-left: 4px solid #da291c; padding-left: 12px; color: #aaa; margin: 10px 0; font-style: italic;">${trimmed.substring(2)}</blockquote>`;
+        } else if (trimmed.startsWith('|')) {
+          return `<div style="display:flex; border-bottom:1px solid #333; padding: 6px 12px; background: rgba(255,255,255,0.02); font-family: monospace;">${line}</div>`;
+        }
+        
+        return `<div style="padding: 2px 8px; line-height: 1.6;">${line}</div>`;
+      });
+      
+      return highlightedLines.join('\n');
     }
 
     function renderMatchStats(results) {
       document.getElementById('matchStatsContainer').style.display = 'block';
       
-      // Parse results - they may have multiple pages
-      let match = 0, partial = 0, mismatch = 0, total = 0;
-      
-      if (results.pages) {
-        // New format with per-page results
-        results.pages.forEach(page => {
-          total++;
-          const type = page.match_type.toLowerCase();
-          if (type === 'match') match++;
-          else if (type === 'partial') partial++;
-          else if (type === 'mismatch') mismatch++;
-        });
-      } else {
-        // Old format
-        match = results.match ?? 0;
-        partial = results.partial ?? 0;
-        mismatch = results.mismatch ?? 0;
-        total = match + partial + mismatch;
-      }
-      
-      document.getElementById('stat-match').textContent = match;
-      document.getElementById('stat-partial').textContent = partial;
-      document.getElementById('stat-mismatch').textContent = mismatch;
-      
-      const overall = total > 0 ? (match / total * 100) : 0;
-      document.getElementById('stat-overall').textContent = overall.toFixed(1) + '%';
-      document.getElementById('progress-count').textContent = (match + partial + mismatch) + ' / ' + total;
+      // Update Stage MD Extraction Status Card
+      document.getElementById('stageTopicsCount').textContent = results.stage_topics ?? '0';
+      document.getElementById('stageWordCount').textContent = (results.stage_words ?? 0).toLocaleString();
+      document.getElementById('stageBoldCount').textContent = (results.stage_bold ?? 0).toLocaleString();
+      document.getElementById('stageItalicCount').textContent = (results.stage_italic ?? 0).toLocaleString();
+      document.getElementById('stageLinksCount').textContent = (results.stage_links ?? 0).toLocaleString();
+      document.getElementById('stageCharCount').textContent = (results.stage_char ?? 0).toLocaleString();
+
+      // Update Production MD Extraction Status Card
+      document.getElementById('prodTopicsCount').textContent = results.prod_topics ?? '0';
+      document.getElementById('prodWordCount').textContent = (results.prod_words ?? 0).toLocaleString();
+      document.getElementById('prodBoldCount').textContent = (results.prod_bold ?? 0).toLocaleString();
+      document.getElementById('prodItalicCount').textContent = (results.prod_italic ?? 0).toLocaleString();
+      document.getElementById('prodLinksCount').textContent = (results.prod_links ?? 0).toLocaleString();
+      document.getElementById('prodCharCount').textContent = (results.prod_char ?? 0).toLocaleString();
+
+      // Overall Similarity score
+      const matchPctText = results.match_percentage ?? '0.00%';
+      document.getElementById('stat-overall').textContent = matchPctText;
+      const matchPctNum = parseFloat(matchPctText);
       
       setTimeout(() => {
-        document.getElementById('bar-overall').style.width = overall + '%';
-        document.getElementById('bar-progress').style.width = (total > 0 ? (match + partial + mismatch) / total * 100 : 0) + '%';
+        document.getElementById('bar-overall').style.width = matchPctNum + '%';
       }, 100);
+
+      // Metrics Drift Analysis Table
+      const updateRow = (idPrefix, stageVal, prodVal) => {
+        const stageEl = document.getElementById(`tdStage${idPrefix}`);
+        const prodEl = document.getElementById(`tdProd${idPrefix}`);
+        const varEl = document.getElementById(`tdVar${idPrefix}`);
+        const statusEl = document.getElementById(`tdStatus${idPrefix}`);
+        
+        stageEl.textContent = stageVal.toLocaleString();
+        prodEl.textContent = prodVal.toLocaleString();
+        
+        const variance = stageVal - prodVal;
+        varEl.textContent = (variance > 0 ? '+' : '') + variance.toLocaleString();
+        
+        if (variance === 0) {
+          varEl.style.color = '#27ae60';
+          statusEl.innerHTML = '<span style="background:#d4edda; color:#155724; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:11px; border:1px solid #c3e6cb;">✅ Match</span>';
+        } else {
+          varEl.style.color = '#e74c3c';
+          statusEl.innerHTML = '<span style="background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:11px; border:1px solid #f5c6cb;">❌ Drifted</span>';
+        }
+      };
+
+      updateRow('Words', results.stage_words ?? 0, results.prod_words ?? 0);
+      updateRow('Chars', results.stage_char ?? 0, results.prod_char ?? 0);
+      updateRow('Bold', results.stage_bold ?? 0, results.prod_bold ?? 0);
+      updateRow('Italic', results.stage_italic ?? 0, results.prod_italic ?? 0);
+      updateRow('Links', results.stage_links ?? 0, results.prod_links ?? 0);
     }
   </script>
 </body>

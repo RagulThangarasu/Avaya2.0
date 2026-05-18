@@ -116,6 +116,7 @@
     <a href="content-validation.html">TOC Validation</a>
     <a href="broken-links.html">Broken Links</a>
     <a href="pdf-validation.html">PDF</a>
+    <a href="extra-products.html">Extra Products</a>
   </div>
 
   
@@ -458,6 +459,12 @@
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
               downloadBtn.href = '/api/download/' + msg.reportFile;
               downloadBtn.download = msg.reportFile;
+            }
+            
+            // Show PDF Download button
+            const pdfDownloadBtn = document.getElementById('pdfDownloadBtn');
+            if (pdfDownloadBtn) {
+              pdfDownloadBtn.style.display = 'inline-flex';
             }
 
             reportLink.style.display = 'block';
