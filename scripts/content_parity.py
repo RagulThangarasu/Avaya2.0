@@ -59,66 +59,23 @@ async def handle_cookies(page):
     except:
         pass
 
-# ── Prod TOC Extraction ──────────────────────────────────────────────
-async def extract_prod_toc(page, base_url):
-    await page.wait_for_load_state("networkidle")
-    await handle_cookies(page)
-    await page.wait_for_timeout(3000)
-
-    try:
-        # 1. Click "Expand All" button if available
-        expand_btn = page.locator('.zDocsCollapseExpandButton').first
-        if await expand_btn.is_visible(timeout=5000):
-            await expand_btn.click()
-            await page.wait_for_timeout(5000)
-    except:
-        pass
-
-    # 2. Iteratively expand nested nodes up to 5 levels deep to capture full sequence
-    for level in range(5):
-        try:
-            # Trigger parallel clicks in-browser to bypass Playwright's sequential mouse emulation (100x faster!)
-            expanded_count = await page.evaluate('''() => {
-                const buttons = Array.from(document.querySelectorAll('.zDocsTocCollapseItemButton[aria-expanded="false"], button[aria-expanded="false"], .expand-icon'));
-                buttons.forEach(btn => {
-                    try { btn.click(); } catch(e) {}
-                });
-                return buttons.length;
-            }''')
-            if expanded_count == 0:
-                break
-            print(f"   [Level {level+1}] Triggered expansion on {expanded_count} nested nodes...")
-            await page.wait_for_timeout(1000)
-        except Exception as e:
-            print(f"   [Level {level+1}] Expand warning: {e}")
-            break
-
-    links_data = await page.evaluate(r'''() => {
-        const results = [];
-        const container = document.querySelector('.zDocsTocList') || document.querySelector('.zDocsTOC');
-        let allLinks = [];
-        if (container) {
-            allLinks = Array.from(container.querySelectorAll('a[href]'));
-        }
-        if (allLinks.length === 0) {
-            allLinks = Array.from(document.querySelectorAll('nav a[href], [class*="sidebar"] a[href]'));
-        }
-        allLinks.forEach(a => {
-            const href = a.getAttribute('href');
-            let text = a.innerText.trim();
-            // Clean up titles (remove leading/trailing symbols, newlines, tabs, chevron chars)
-            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
-            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
-                results.push({text, href});
-            }
-        }''')
-    except: pass
-
+# ── Unified TOC Extraction ──────────────────────────────────────────
 async def senior_toc_extraction(page, base_url, is_prod=True):
-    await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+    # Wait for the page network activity to settle down
+    await page.goto(base_url, wait_until="networkidle", timeout=60000)
     await handle_cookies(page)
+    await page.wait_for_timeout(2000)
+    
+    # Wait for the TOC elements to be present in the DOM
+    target_sel = ".zDocsTocList, .zDocsTOC" if is_prod else ".cmp-navigation"
+    try:
+        await page.wait_for_selector(target_sel, timeout=20000)
+    except Exception as e:
+        print(f"   ⚠️ Timeout waiting for TOC selector {target_sel}: {e}")
+    
     
     if is_prod:
+        # Production: click collapse/expand buttons
         try:
             await page.evaluate('''async () => {
                 const sleep = m => new Promise(r => setTimeout(r, m));
@@ -132,89 +89,86 @@ async def senior_toc_extraction(page, base_url, is_prod=True):
                     await sleep(1500);
                 }
             }''')
-        except: pass
+        except:
+            pass
+    else:
+        # Stage: click active/nested collapsible items
+        for level in range(3):
+            try:
+                expanded_count = await page.evaluate('''() => {
+                    const buttons = Array.from(document.querySelectorAll('.cmp-navigation__item--active[aria-expanded="false"], .cmp-navigation__item[aria-expanded="false"], button[aria-expanded="false"]'));
+                    buttons.forEach(btn => {
+                        try { btn.click(); } catch(e) {}
+                    });
+                    return buttons.length;
+                }''')
+                if expanded_count == 0:
+                    break
+                await page.wait_for_timeout(500)
+            except:
+                break
 
-    links = await page.evaluate('''async () => {
+    # Determine selectors based on environment
+    if is_prod:
+        container_sel = "ul.zDocsTocList, .zDocsTOC"
+        link_sel = "a[href]"
+    else:
+        container_sel = ".cmp-navigation"
+        link_sel = ".cmp-navigation__item-link"
+
+    links = await page.evaluate(r'''async (args) => {
+        const { containerSel, linkSel } = args;
         const sleep = m => new Promise(r => setTimeout(r, m));
-        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
+        
+        const selectors = containerSel.split(',');
+        let container = null;
+        for (const sel of selectors) {
+            const el = document.querySelector(sel.trim());
+            if (el) {
+                container = el;
+                break;
+            }
+        }
+        if (!container) container = document.body;
+        
         const results = [];
         const seen = new Set();
         let lastHeight = 0, scrollCount = 0;
+        const isBody = container === document.body;
+        
         while (scrollCount < 80) {
-            container.querySelectorAll('a[href]').forEach(a => {
-                const href = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
-                const text = a.innerText.trim();
-                if (href && text && !seen.has(href) && !href.startsWith('javascript')) {
+            container.querySelectorAll(linkSel).forEach(a => {
+                const hrefAttr = a.getAttribute('href');
+                if (!hrefAttr || hrefAttr.startsWith('#') || hrefAttr.startsWith('javascript')) return;
+                
+                const href = new URL(hrefAttr, window.location.href).href.split('#')[0].split('?')[0];
+                let text = a.innerText.trim();
+                text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
+                
+                if (href && text && !seen.has(href)) {
                     seen.add(href);
                     results.push({text, url: href});
                 }
             });
-            container.scrollTop += 600;
+            
+            if (isBody) {
+                window.scrollBy(0, 600);
+            } else {
+                container.scrollTop += 600;
+            }
             await sleep(400);
-            if (container.scrollTop === lastHeight) break;
-            lastHeight = container.scrollTop;
+            
+            const currentHeight = isBody ? window.pageYOffset : container.scrollTop;
+            if (currentHeight === lastHeight) break;
+            lastHeight = currentHeight;
             scrollCount++;
         }
         return results;
-    }''')
-    return [{'title': l['text'], 'url': l['url']} for l in links if '.html' in l['url'] or '/page/' in l['url']]
+    }''', {'containerSel': container_sel, 'linkSel': link_sel})
 
-    toc = []
-    seen = set()
-    for item in links_data:
-        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if full_url not in seen:
-            toc.append({'title': item['text'], 'url': full_url})
-            seen.add(full_url)
-
-    print(f"   ✅ Prod TOC: {len(toc)} topics found.")
-    return toc
-
-# ── Stage/Published TOC Extraction ───────────────────────────────────
-async def extract_stage_toc(page, base_url):
-    await page.wait_for_load_state("networkidle")
-    await handle_cookies(page)
-    await page.wait_for_timeout(2000)
-
-    # Iteratively expand collapsible nested items on Stage to match sequences
-    for level in range(3):
-        try:
-            expanded_count = await page.evaluate('''() => {
-                const buttons = Array.from(document.querySelectorAll('.cmp-navigation__item--active[aria-expanded="false"], .cmp-navigation__item[aria-expanded="false"], button[aria-expanded="false"]'));
-                buttons.forEach(btn => {
-                    try { btn.click(); } catch(e) {}
-                });
-                return buttons.length;
-            }''')
-            if expanded_count == 0:
-                break
-            await page.wait_for_timeout(500)
-        except:
-            break
-
-    links_data = await page.evaluate(r'''() => {
-        const results = [];
-        const links = document.querySelectorAll('.cmp-navigation__item-link');
-        links.forEach(a => {
-            const href = a.getAttribute('href');
-            let text = a.innerText.trim();
-            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
-            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
-                results.push({text, href});
-            }
-        });
-        return results;
-    }''')
-
-    toc = []
-    seen = set()
-    for item in links_data:
-        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
-        if full_url not in seen and '.html' in full_url:
-            toc.append({'title': item['text'], 'url': full_url})
-            seen.add(full_url)
-
-    print(f"   ✅ Stage TOC: {len(toc)} topics found.")
+    toc = [{'title': l['text'], 'url': l['url']} for l in links if '.html' in l['url'] or '/page/' in l['url']]
+    env_label = "Prod" if is_prod else "Stage"
+    print(f"   ✅ {env_label} TOC: {len(toc)} topics found.")
     return toc
 
 # ── Main Validation ──────────────────────────────────────────────────
@@ -226,27 +180,10 @@ async def run_validation():
 
         p1, p2 = await s_ctx.new_page(), await p_ctx.new_page()
         print("🔍 Scanning Navigation Structure (Parallel)...")
-        stage_toc, prod_toc = await asyncio.gather(senior_toc_extraction(p1, STAGE_URL, False), senior_toc_extraction(p2, PROD_URL, True))
-        await browser.close()
-
-        print("\n🔍 Extracting TOC from both environments...")
-
-        # Extract Prod and Stage TOC concurrently in parallel (saves 50% load duration!)
-        async def crawl_prod():
-            p_page = await prod_ctx.new_page()
-            await p_page.goto(PROD_URL, wait_until="networkidle", timeout=60000)
-            toc = await extract_prod_toc(p_page, PROD_URL)
-            await p_page.close()
-            return toc
-
-        async def crawl_stage():
-            s_page = await stage_ctx.new_page()
-            await s_page.goto(STAGE_URL, wait_until="networkidle", timeout=60000)
-            toc = await extract_stage_toc(s_page, STAGE_URL)
-            await s_page.close()
-            return toc
-
-        prod_toc, stage_toc = await asyncio.gather(crawl_prod(), crawl_stage())
+        stage_toc, prod_toc = await asyncio.gather(
+            senior_toc_extraction(p1, STAGE_URL, False),
+            senior_toc_extraction(p2, PROD_URL, True)
+        )
 
         print(f"\n📊 Comparing: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
 
@@ -373,7 +310,8 @@ async def run_validation():
         print(f"{'='*60}\n")
 
         # ── Generate Excel Report ────────────────────────────────────
-        os.makedirs(os.path.dirname(REPORT_FILENAME), exist_ok=True)
+        if os.path.dirname(REPORT_FILENAME):
+            os.makedirs(os.path.dirname(REPORT_FILENAME), exist_ok=True)
 
         # Prepare individual TOC dataframes
         stage_toc_df = pd.DataFrame([
