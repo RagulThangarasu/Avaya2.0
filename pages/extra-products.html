@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Extra Products Discovery</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f5f7; min-height: 100vh; }
+    .header { background: #232527; color: white; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 4px solid #da291c; }
+    .header-left h1 { font-size: 24px; margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
+    .header-left p { opacity: 0.8; font-size: 14px; }
+    .aem-status-badge { display: none !important; }
+    .nav { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 10px 40px; display: flex; gap: 20px; flex-wrap: wrap; }
+    .nav a { text-decoration: none; color: #4a4a4a; font-weight: 500; padding: 8px 16px; border-radius: 6px; transition: all 0.2s; border: 1px solid transparent; font-size: 14px; }
+    .nav a:hover { background: #fdedec; color: #da291c; }
+    .nav a.active { background: #da291c; color: white; border-color: #da291c; }
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); padding: 25px; margin-bottom: 20px; border: 1px solid #edf2f7; border-top: 3px solid transparent; transition: border-color 0.3s; }
+    .card:hover { border-top-color: #da291c; }
+    .card h2 { color: #232527; margin-bottom: 20px; font-size: 20px; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 14px; }
+    .form-group input { width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
+    .form-group input:focus { outline: none; border-color: #da291c; box-shadow: 0 0 0 3px rgba(218,41,28,0.1); }
+    .form-group .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #da291c; color: white; }
+    .btn-primary:hover { background: #b32015; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(218,41,28,0.3); }
+    .btn-primary:disabled { background: #999; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-secondary { background: #f4f5f7; color: #333; margin-left: 10px; border: 1px solid #ddd; }
+    .btn-secondary:hover { background: #e2e4e8; }
+    .actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .status { margin-top: 20px; padding: 16px; border-radius: 8px; display: none; }
+    .status.running { display: block; background: #fff3cd; border: 1px solid #ffc107; color: #856404; }
+    .status.success { display: block; background: #d4edda; border: 1px solid #28a745; color: #155724; }
+    .status.error { display: block; background: #f8d7da; border: 1px solid #dc3545; color: #721c24; }
+    .status .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #856404; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .log-container { margin-top: 20px; display: none; }
+    .log-container.visible { display: block; }
+    .log-container h3 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .log { background: #232527; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 13px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; border-left: 4px solid #da291c; }
+    .info-box { background: #fff; border: 1px solid #e0e0e0; border-left: 4px solid #da291c; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+    .info-box h3 { color: #232527; font-size: 15px; margin-bottom: 8px; }
+    .info-box ul { margin-left: 20px; color: #4a4a4a; font-size: 13px; line-height: 1.8; }
+    .report-link { display: none; margin-top: 25px; padding: 20px; background: #fff; border: 2px solid #27ae60; border-radius: 12px; box-shadow: 0 4px 15px rgba(39,174,96,0.1); animation: slideIn 0.5s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .summary-badges { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+    .badge { padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .badge-blue  { background: #d0e8ff; color: #0047b3; border: 1px solid #a8d0f5; }
+    .badge-green { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    /* Report Table */
+    .report-viewer-container { display: none; margin-top: 20px; }
+    .sheet-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .sheet-tab { padding: 8px 16px; border-radius: 20px; background: #f4f5f7; border: 1px solid #ddd; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; color: #4a4a4a; }
+    .sheet-tab.active { background: #da291c; color: white; border-color: #da291c; }
+    .sheet-tab:hover:not(.active) { background: #e2e4e8; }
+    .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #e0e0e0; max-height: 520px; overflow-y: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th { background: #f4f5f7; color: #232527; padding: 12px 10px; text-align: left; position: sticky; top: 0; border: 1px solid #ddd; font-weight: 600; border-bottom: 2px solid #da291c; }
+    td { padding: 10px; border: 1px solid #ddd; word-break: break-word; min-width: 120px; }
+    tr:nth-child(even) { background: #fafafa; }
+    .cell-success { background-color: #d4edda !important; color: #155724; }
+    .cell-danger  { background-color: #f8d7da !important; color: #721c24; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>📦 Extra Products Discovery</h1>
+      <p>Crawl bundle pages and discover all products from Stage environment</p>
+    </div>
+  </div>
+
+  <div class="nav">
+    <a href="content-validation.html">TOC Validation</a>
+    <a href="content-parity.html">TOC Parity</a>
+    <a href="content-deep-validation.html">Content Validation</a>
+    <a href="broken-links.html">Broken Links</a>
+    <a href="pdf-validation.html">PDF</a>
+    <a href="extra-products.html" class="active">Extra Products</a>
+  </div>
+
+  <div class="container">
+    <div class="info-box">
+      <h3>ℹ️ What this does:</h3>
+      <ul>
+        <li>Fetches the provided URL and extracts all <strong>product links and titles</strong> from the page</li>
+        <li>Captures every <code>&lt;a href&gt;</code> link within the same domain</li>
+        <li>Generates an Excel report with <strong>Product Title</strong> and <strong>Product URL</strong> columns</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Configure</h2>
+      <div class="form-group">
+        <label>Bundle Page URL</label>
+        <input type="url" id="startUrl" placeholder="https://publish-p181473-e1910385.adobeaemcloud.com/en-us/home/bundle/" />
+        <div class="hint">The page containing all product links (e.g. the bundle listing page)</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="runBtn" onclick="runDiscovery()">🚀 Start Discovery</button>
+        <button class="btn btn-secondary" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="status" id="statusEl"></div>
+    </div>
+
+    <div class="log-container" id="logContainer">
+      <h3>📋 Live Output</h3>
+      <div class="log" id="logEl"></div>
+    </div>
+
+    <div class="report-link" id="reportLink">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div>
+          <div style="font-size:18px; font-weight:700; color:#155724; margin-bottom:6px;">✅ Discovery Complete!</div>
+          <div id="summaryText" style="font-size:14px; color:#333;"></div>
+          <div class="summary-badges" id="summaryBadges"></div>
+        </div>
+        <button class="btn btn-primary" onclick="downloadReport()">⬇️ Download Report</button>
+      </div>
+    </div>
+
+    <div class="report-viewer-container" id="reportViewerContainer">
+      <div class="card">
+        <h2>📊 Report Viewer</h2>
+        <div class="sheet-tabs" id="sheetTabs"></div>
+        <div class="table-wrap">
+          <table id="reportTable"><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentJobId = null;
+    let currentReportFile = null;
+    let reportData = null;
+
+    // Pre-fill from config
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      if (cfg.stage) {
+        try {
+          const url = new URL(cfg.stage);
+          document.getElementById('startUrl').value = url.origin + '/en-us/home/bundle/';
+        } catch {}
+      }
+    }).catch(() => {});
+
+    function runDiscovery() {
+      const startUrl = document.getElementById('startUrl').value.trim();
+
+      if (!startUrl) {
+        alert('Please enter the Bundle Page URL');
+        return;
+      }
+
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Running...';
+
+      const statusEl = document.getElementById('statusEl');
+      statusEl.className = 'status running';
+      statusEl.innerHTML = '<span class="spinner"></span> Crawling bundle pages and discovering products...';
+
+      const logContainer = document.getElementById('logContainer');
+      const logEl = document.getElementById('logEl');
+      logContainer.classList.add('visible');
+      logEl.textContent = '';
+
+      document.getElementById('reportLink').style.display = 'none';
+      document.getElementById('reportViewerContainer').style.display = 'none';
+
+      fetch('/api/run/extra-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startUrl })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) throw new Error(data.error);
+          currentJobId = data.jobId;
+          pollLogs(data.jobId);
+        })
+        .catch(err => {
+          statusEl.className = 'status error';
+          statusEl.innerHTML = '❌ ' + err.message;
+          btn.disabled = false;
+          btn.textContent = '🚀 Start Discovery';
+        });
+    }
+
+    function pollLogs(jobId) {
+      const source = new EventSource('/api/logs/' + jobId);
+      const logEl = document.getElementById('logEl');
+      const statusEl = document.getElementById('statusEl');
+      const btn = document.getElementById('runBtn');
+
+      source.onmessage = function(e) {
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'log') {
+          logEl.textContent += msg.data + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        } else if (msg.type === 'done') {
+          source.close();
+          btn.disabled = false;
+          btn.textContent = '🚀 Start Discovery';
+          statusEl.className = 'status success';
+          statusEl.innerHTML = '✅ Discovery complete! Report ready.';
+
+          if (msg.reportFile) {
+            currentReportFile = msg.reportFile;
+            showReportLink(msg.results);
+            loadReport(msg.reportFile);
+          }
+        } else if (msg.type === 'error') {
+          source.close();
+          btn.disabled = false;
+          btn.textContent = '🚀 Start Discovery';
+          statusEl.className = 'status error';
+          statusEl.innerHTML = '❌ ' + (msg.data || 'Error occurred');
+        }
+      };
+
+      source.onerror = function() {
+        source.close();
+        btn.disabled = false;
+        btn.textContent = '🚀 Start Discovery';
+      };
+    }
+
+    function showReportLink(results) {
+      const reportLink = document.getElementById('reportLink');
+      reportLink.style.display = 'block';
+
+      const badges = document.getElementById('summaryBadges');
+      badges.innerHTML = '';
+
+      if (results) {
+        badges.innerHTML += `<span class="badge badge-blue">📦 Products Found: ${results.overall ?? 0}</span>`;
+        badges.innerHTML += `<span class="badge badge-green">🔗 Bundle Pages: ${results.bundle_pages ?? 0}</span>`;
+      }
+
+      document.getElementById('summaryText').textContent = 'Excel report generated with Products and Bundle Pages sheets.';
+    }
+
+    function downloadReport() {
+      if (currentReportFile) {
+        window.location.href = '/api/download/' + currentReportFile;
+      }
+    }
+
+    function loadReport(filename) {
+      fetch('/api/report-data/' + filename)
+        .then(r => r.json())
+        .then(data => {
+          reportData = data;
+          document.getElementById('reportViewerContainer').style.display = 'block';
+          renderSheetTabs();
+          renderSheet(0);
+        })
+        .catch(() => {});
+    }
+
+    function renderSheetTabs() {
+      const tabs = document.getElementById('sheetTabs');
+      tabs.innerHTML = '';
+      reportData.sheets.forEach((sheet, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'sheet-tab' + (i === 0 ? ' active' : '');
+        btn.textContent = sheet.name;
+        btn.onclick = () => {
+          document.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
+          btn.classList.add('active');
+          renderSheet(i);
+        };
+        tabs.appendChild(btn);
+      });
+    }
+
+    function renderSheet(sheetIndex) {
+      const table = document.querySelector('#reportTable tbody');
+      table.innerHTML = '';
+      const rows = reportData.sheets[sheetIndex].rows;
+      if (!rows || rows.length === 0) {
+        table.innerHTML = '<tr><td style="text-align:center;padding:40px;">No data</td></tr>';
+        return;
+      }
+      
+      const maxRender = 300;
+      const headerRow = rows[0];
+      const dataRows = rows.slice(1);
+      const toRender = [headerRow, ...dataRows.slice(0, maxRender)];
+      
+      toRender.forEach((rowData, rIdx) => {
+        const tr = document.createElement('tr');
+        rowData.forEach(cellValue => {
+          const cell = document.createElement(rIdx === 0 ? 'th' : 'td');
+          cell.textContent = cellValue === null || cellValue === undefined ? '' : cellValue;
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      });
+
+      if (rows.length > (maxRender + 1)) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = rows[0].length;
+        td.style.textAlign = 'center';
+        td.style.padding = '15px';
+        td.style.background = '#fdedec';
+        td.style.color = '#da291c';
+        td.style.fontWeight = '600';
+        td.textContent = `⚡ Showing first ${maxRender} of ${rows.length - 1} entries. Please click "Download Report" to view all ${rows.length - 1} entries locally!`;
+        tr.appendChild(td);
+        table.appendChild(tr);
+      }
+    }
+
+    function clearLog() {
+      document.getElementById('logEl').textContent = '';
+      document.getElementById('logContainer').classList.remove('visible');
+      document.getElementById('statusEl').className = 'status';
+      document.getElementById('reportLink').style.display = 'none';
+      document.getElementById('reportViewerContainer').style.display = 'none';
+    }
+  </script>
+</body>
+</html>

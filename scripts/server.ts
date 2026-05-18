@@ -112,14 +112,14 @@ function normalizeUrls(stage: string, production: string) {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // Redirect root to content-validation page
-app.get('/', (_req, res) => {
+app.get('/', (_req: Request, res: Response) => {
   res.redirect('/content-validation.html');
 });
 
 // AEM session status
 const SESSION_METADATA_PATH = path.join(ROOT, 'auth-sessions/session-metadata.json');
 
-app.get('/api/aem-status', (_req, res) => {
+app.get('/api/aem-status', (_req: Request, res: Response) => {
   try {
     if (!fs.existsSync(SESSION_METADATA_PATH)) {
       res.json({ connected: false, reason: 'No session found' });
@@ -144,7 +144,7 @@ app.get('/api/aem-status', (_req, res) => {
 });
 
 // Get current config
-app.get('/api/config', (_req, res) => {
+app.get('/api/config', (_req: Request, res: Response) => {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
     res.json(config);
@@ -154,7 +154,7 @@ app.get('/api/config', (_req, res) => {
 });
 
 // List PDF files
-app.get('/api/pdf-files', (_req, res) => {
+app.get('/api/pdf-files', (_req: Request, res: Response) => {
   const getFiles = (dir: string) => {
     try {
       return fs.readdirSync(dir)
@@ -237,6 +237,53 @@ app.post('/api/run/deep-content-validation', (req: any, res: any) => {
     STAGE_URL: normalized.stage,
     PROD_URL: normalized.production,
     REPORT_FILENAME: reportPath
+  });
+  job.reportFile = reportFile;
+
+  res.json({ jobId: job.id });
+});
+
+// Run extra-products discovery
+app.post('/api/run/extra-products', (req: any, res: any) => {
+  const { startUrl } = req.body;
+  if (!startUrl) {
+    res.json({ error: 'startUrl is required' });
+    return;
+  }
+
+  const reportFile = `extra-products-${Date.now()}.xlsx`;
+  const reportPath = path.join(UI_REPORTS_DIR, reportFile);
+
+  const job = startTest('extra-products', [
+    'python3', '-u', 'scripts/extra_products.py'
+  ], {
+    START_URL: startUrl,
+    REPORT_FILENAME: reportPath
+  });
+  job.reportFile = reportFile;
+
+  res.json({ jobId: job.id });
+});
+
+// Run deep-content-validation (Markdown Extraction & Parity Comparison)
+app.post('/api/run/deep-content-validation', (req: any, res: any) => {
+  const { stage, production } = req.body;
+  if (!stage && !production) {
+    res.json({ error: 'At least one URL is required' });
+    return;
+  }
+
+  const normalized = normalizeUrls(stage || '', production || '');
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
+
+  const reportFile = `md_comparison_report.md`;
+
+  const job = startTest('deep-content-validation', [
+    'python3', '-u', 'scripts/extract_and_compare_md_optimized.py'
+  ], {
+    STAGE_URL: normalized.stage,
+    PROD_URL: normalized.production
   });
   job.reportFile = reportFile;
 
@@ -366,7 +413,7 @@ app.post('/api/login', (req: any, res: any) => {
 });
 
 // Disconnect/Logout AEM
-app.post('/api/logout', (_req, res) => {
+app.post('/api/logout', (_req: Request, res: Response) => {
   try {
     const sessionDir = path.join(ROOT, 'auth-sessions');
     if (fs.existsSync(sessionDir)) {
@@ -382,7 +429,7 @@ app.post('/api/logout', (_req, res) => {
 });
 
 // Stream logs via SSE
-app.get('/api/logs/:jobId', (req, res) => {
+app.get('/api/logs/:jobId', (req: Request, res: Response) => {
   const job = jobs.get(req.params.jobId);
   if (!job) {
     res.status(404).json({ error: 'Job not found' });
@@ -442,7 +489,7 @@ app.get('/api/logs/:jobId', (req, res) => {
 });
 
 // Stop test(s)
-app.post('/api/stop', (req, res) => {
+app.post('/api/stop', (req: Request, res: Response) => {
   const { jobId } = req.body;
   
   if (jobId) {
@@ -481,14 +528,25 @@ app.get('/api/download/:filename', (req: any, res: any) => {
 
   if (finalPath) {
     console.log(`   ✅ Found: ${finalPath}`);
-    res.download(finalPath, filename, (err) => {
-      if (err) {
-        console.error(`   ❌ Download error for ${filename}:`, err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to send file' });
-        }
-      }
-    });
+    try {
+      const fileBuffer = fs.readFileSync(finalPath);
+      const ext = path.extname(filename).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.pdf':  'application/pdf',
+        '.csv':  'text/csv',
+        '.txt':  'text/plain',
+        '.json': 'application/json',
+      };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.end(fileBuffer);
+    } catch (err: any) {
+      console.error(`   ❌ Read error for ${filename}:`, err);
+      res.status(500).json({ error: 'Failed to read file' });
+    }
   } else {
     console.warn(`   ⚠️ Not found in .ui_reports or reports/`);
     res.status(404).json({ error: 'File not found' });
@@ -496,7 +554,7 @@ app.get('/api/download/:filename', (req: any, res: any) => {
 });
 
 // List available reports
-app.get('/api/reports', (_req, res) => {
+app.get('/api/reports', (_req: Request, res: Response) => {
   try {
     const files = fs.readdirSync(REPORTS_DIR)
       .filter(f => f.endsWith('.xlsx') || f.endsWith('.pdf'))
@@ -513,12 +571,13 @@ app.get('/api/reports', (_req, res) => {
 });
 
 // Get report data as JSON for UI rendering
-app.get('/api/report-data/:type', async (req, res) => {
+app.get('/api/report-data/:type', async (req: Request, res: Response) => {
   const { type } = req.params;
   const jobId = req.query.jobId as string;
   
   const typeMap: Record<string, string> = {
     'content-parity': 'content-parity-report.xlsx',
+    'deep-content-validation': 'deep-content-validation-report.xlsx',
     'leftnav':        'leftnav-toc-validation-report.xlsx',
     'pdf-validation': 'pdf-validation-report.xlsx',
     'metadata-validation': 'metadata-validation-report.xlsx',
@@ -589,7 +648,7 @@ app.get('/api/report-data/:type', async (req, res) => {
 });
 
 // Generate PDF report from xlsx data
-app.get('/api/generate-pdf/:type', async (req, res) => {
+app.get('/api/generate-pdf/:type', async (req: Request, res: Response) => {
   const typeMap: Record<string, string> = {
     'content-parity': 'content-parity-report.xlsx',
     'leftnav':        'leftnav-toc-validation-report.xlsx',
@@ -722,6 +781,9 @@ function startTest(name: string, cmd: string[], extraEnv: Record<string, string>
           try {
             const resultData = JSON.parse(trimmed.replace('::RESULTS::', ''));
             job.results = resultData;
+            if (resultData.excel_report && resultData.excel_report !== 'N/A') {
+              job.reportFile = resultData.excel_report;
+            }
           } catch (e) {
             console.error('Failed to parse results JSON:', e);
           }
@@ -739,14 +801,14 @@ function startTest(name: string, cmd: string[], extraEnv: Record<string, string>
     }
   });
 
-  proc.on('close', (code) => {
+  proc.on('close', (code: number | null) => {
     if (code === 0) {
       job.status = 'done';
       job.summary = `Test passed. Report saved to reports/`;
       job.logs.push('');
       job.logs.push('✅ Test completed successfully!');
     } else {
-      job.status = job.status === 'error' ? 'error' : 'error';
+      job.status = 'error';
       job.summary = job.summary || `Test exited with code ${code}`;
       job.logs.push('');
       job.logs.push(`❌ Test exited with code ${code}`);
@@ -754,7 +816,7 @@ function startTest(name: string, cmd: string[], extraEnv: Record<string, string>
     job.process = null;
   });
 
-  proc.on('error', (err) => {
+  proc.on('error', (err: Error) => {
     job.status = 'error';
     job.summary = err.message;
     job.logs.push(`❌ Error: ${err.message}`);
@@ -779,7 +841,7 @@ app.use((err: any, _req: any, res: any, _next: any) => {
 });
 
 // 404 handler for API
-app.use('/api', (req, res) => {
+app.use('/api', (req: Request, res: Response) => {
   res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
 });
 
@@ -791,7 +853,8 @@ app.listen(PORT, () => {
   console.log(`║  URL: http://localhost:${PORT}                            ║`);
   console.log('║                                                          ║');
   console.log('║  Pages:                                                  ║');
-  console.log('║    • Content Validation  → /content-validation.html      ║');
+  console.log('║    • TOC Parity          → /content-parity.html          ║');
+  console.log('║    • TOC Validation      → /content-validation.html      ║');
   console.log('║    • Left Nav Validation → /leftnav-validation.html      ║');
   console.log('║    • PDF Validation      → /pdf-validation.html          ║');
   console.log('║    • Metadata Validation → /metadata-validation.html     ║');

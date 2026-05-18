@@ -24,8 +24,8 @@
     "clean:sessions": "rm -rf auth-sessions",
     "clean:reports": "rm -rf reports test-results",
     "clean": "npm run clean:sessions && npm run clean:reports",
-    "server": "npx tsx scripts/server.ts",
-    "deploy": "git add . && git commit -m 'Automatic deployment' && git push origin main && git push origin main:gh-pages --force"
+    "validate:toc": "python3 scripts/toc_validation_detailed.py",
+    "server": "npx tsx scripts/server.ts"
   },
   "keywords": [
     "playwright",

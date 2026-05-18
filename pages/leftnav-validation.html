@@ -17,7 +17,7 @@
     .header { background: #232527; color: white; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 4px solid #da291c; }
     .header-left h1 { font-size: 24px; margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
     .header-left p { opacity: 0.8; font-size: 14px; }
-    .aem-status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 50px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; border: 2px solid transparent; transition: all 0.4s ease; white-space: nowrap; }
+    .aem-status-badge { display: none !important; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 50px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; border: 2px solid transparent; transition: all 0.4s ease; white-space: nowrap; }
     .aem-status-badge.connected { background: rgba(39, 174, 96, 0.2); border-color: #2ecc71; color: #2ecc71; box-shadow: 0 0 12px rgba(46,204,113,0.3); }
     .aem-status-badge.disconnected { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #ff7675; box-shadow: 0 0 12px rgba(231,76,60,0.3); }
     .aem-status-badge .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
@@ -143,10 +143,10 @@
   </div>
 
   <div class="nav">
-    <a href="content-validation.html">Content Validation</a>
-    <a href="leftnav-validation.html" class="active">Left Nav Validation</a>
-    <a href="pdf-validation.html">PDF Validation</a>
+    <a href="content-validation.html">TOC Validation</a>
     <a href="broken-links.html">Broken Links</a>
+    <a href="pdf-validation.html">PDF</a>
+    <a href="extra-products.html">Extra Products</a>
   </div>
 
   
@@ -205,7 +205,7 @@
            style="display:none;align-items:center;gap:8px;padding:12px 24px;background:#da291c;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(218,41,28,0.2);">
           📄 Download PDF
         </button>
-        <button id="viewReportBtn" onclick="window.open('report-viewer.html?type=leftnav', '_blank')"
+        <button id="viewReportBtn" onclick="openReportViewer()"
            style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:#4a4a4a;color:#fff;border-radius:8px;border:none;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
           👁️ View Online Report
         </button>
@@ -431,6 +431,14 @@
 
     let eventSource = null;
     let currentJobId = null;
+    let currentReportFile = null;
+
+    function openReportViewer() {
+      const url = currentJobId
+        ? `report-viewer.html?type=leftnav&jobId=${currentJobId}`
+        : 'report-viewer.html?type=leftnav';
+      window.open(url, '_blank');
+    }
 
     function runValidation() {
       const stageUrl = document.getElementById('stageUrl').value.trim();
@@ -488,9 +496,16 @@
             
             // Update download link
             if (msg.reportFile) {
+              currentReportFile = msg.reportFile;
               const downloadBtn = document.getElementById('xlsxDownloadBtn');
               downloadBtn.href = `${API_BASE}/api/download/${msg.reportFile}`;
               downloadBtn.download = msg.reportFile;
+            }
+            
+            // Show PDF Download button
+            const pdfDownloadBtn = document.getElementById('pdfDownloadBtn');
+            if (pdfDownloadBtn) {
+              pdfDownloadBtn.style.display = 'inline-flex';
             }
 
             reportLink.style.display = 'block';

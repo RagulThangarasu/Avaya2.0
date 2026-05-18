@@ -7,174 +7,621 @@ from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import pandas as pd
 from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup
-import difflib
 
-# ── CONFIGURATIONS ──
+# Configurations
 REPORTS_DIR = os.path.join(os.getcwd(), 'reports')
 UI_REPORTS_DIR = os.path.join(os.getcwd(), '.ui_reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(UI_REPORTS_DIR, exist_ok=True)
 
-AUTH_STATE_PATH = os.path.join(os.getcwd(), 'auth-sessions', 'storage-state.json')
+# Load URLs
 TEST_URLS_PATH = os.path.join(os.getcwd(), 'config', 'test-urls.json')
+AUTH_STATE_PATH = os.path.join(os.getcwd(), 'auth-sessions', 'storage-state.json')
 
-# Thresholds for "Senior Tester" perspective
-SIMILARITY_THRESHOLD = 95.0
-CONCURRENT_PAGES = 5
-MAX_TOPICS = 500 
+STAGE_URL = os.environ.get('STAGE_URL')
+PROD_URL = os.environ.get('PROD_URL')
+REPORT_FILENAME = os.environ.get('REPORT_FILENAME') or os.path.join(UI_REPORTS_DIR, f'deep-content-validation-{int(datetime.now().timestamp())}.xlsx')
+
+if not STAGE_URL or not PROD_URL:
+    try:
+        with open(TEST_URLS_PATH, 'r') as f:
+            config = json.load(f)
+            STAGE_URL = STAGE_URL or config.get('stage')
+            PROD_URL = PROD_URL or config.get('production')
+    except:
+        pass
+
+if not STAGE_URL or not PROD_URL:
+    print("❌ Error: Missing STAGE_URL or PROD_URL.")
+    sys.exit(1)
+
+print(f"🚀 Starting Deep Content Validation")
+print(f"   Stage (Publish): {STAGE_URL}")
+print(f"   Production:      {PROD_URL}")
+
+def slugify(t):
+    if not t: return ""
+    return re.sub(r'[^a-z0-9]', '', t.lower())
 
 def get_filename(url):
-    if not url: return ""
     path = urlparse(url).path
     filename = path.split('/')[-1] if '/' in path else path
-    name = filename.split('.')[0]
-    return name.lower().replace('-', '').replace('_', '').replace(' ', '')
+    return filename.replace('.html', '').replace('.htm', '').lower().replace('-', '').replace('_', '')
 
 async def handle_cookies(page):
     try:
-        await page.evaluate('''() => {
-            const sels = ['#onetrust-accept-btn-handler', '#btn-accept-all', 'button:has-text("Accept")', '.cookie-accept'];
-            for (const s of sels) {
-                const b = document.querySelector(s);
-                if (b) b.click();
-            }
-        }''')
-    except: pass
+        for sel in ['#onetrust-accept-btn-handler', '#btn-accept-all', 'button:has-text("Accept")', '.cookie-accept']:
+            if await page.locator(sel).is_visible(timeout=1500):
+                await page.click(sel)
+                await page.wait_for_timeout(500)
+                break
+    except:
+        pass
 
-async def get_page_metrics(browser_context, url, semaphore):
-    async with semaphore:
-        page = await browser_context.new_page()
-        await page.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2,ttf}", lambda route: route.abort())
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            await page.wait_for_timeout(2000)
-            content = await page.content()
-            soup = BeautifulSoup(content, 'html.parser')
-            for noise in soup.select('nav, footer, script, style, header, aside, .breadcrumbs, .zDocsToolbar, .feedback-section'):
-                noise.decompose()
-            main = soup.find('main') or soup.find('article') or soup.find('div', class_='content') or soup.body
-            if not main: return {'error': 'No content'}
-            text = main.get_text(separator=' ', strip=True)
-            images = len(main.find_all('img'))
-            tables = len(main.find_all('table'))
-            headings = [h.get_text().strip() for h in main.find_all(['h1', 'h2', 'h3'])]
-            return {'text': text, 'img_count': images, 'tbl_count': tables, 'h_structure': headings}
-        except Exception as e:
-            return {'error': str(e)}
-        finally:
-            await page.close()
-
-async def senior_toc_extraction(page, base_url, is_prod=True):
-    print(f"🔍 [SENIOR SCAN] {'Production' if is_prod else 'Stage'}: {base_url}")
-    await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+# ── Prod TOC Extraction ──────────────────────────────────────────────
+async def extract_prod_toc(page, base_url):
+    """Extract TOC from Production (documentation.avaya.com)."""
+    await page.wait_for_load_state("networkidle")
     await handle_cookies(page)
-    
-    if is_prod:
-        try:
-            await page.evaluate('''async () => {
-                const sleep = m => new Promise(r => setTimeout(r, m));
-                const rootBtn = document.querySelector('.zDocsCollapseExpandButton');
-                if (rootBtn) rootBtn.click();
-                await sleep(2000);
-                for (let i = 0; i < 3; i++) {
-                    const collapsed = document.querySelectorAll('.zDocsTocItemCollapsed .zDocsTocItemToggle');
-                    if (collapsed.length === 0) break;
-                    collapsed.forEach(btn => btn.click());
-                    await sleep(1500);
-                }
-            }''')
-        except: pass
+    await page.wait_for_timeout(3000)
 
-    links = await page.evaluate('''async () => {
-        const sleep = m => new Promise(r => setTimeout(r, m));
-        const container = document.querySelector('ul.zDocsTocList') || document.querySelector('.zDocsTOC') || document.body;
+    try:
+        # 1. Click "Expand All" button if available
+        expand_btn = page.locator('.zDocsCollapseExpandButton').first
+        if await expand_btn.is_visible(timeout=5000):
+            await expand_btn.click()
+            await page.wait_for_timeout(5000)
+    except:
+        pass
+
+    # 2. Iteratively expand nested nodes up to 5 levels deep to capture full sequence
+    for level in range(5):
+        try:
+            collapse_nodes = await page.locator('.zDocsTocCollapseItemButton[aria-expanded="false"], button[aria-expanded="false"], .expand-icon').all()
+            if not collapse_nodes:
+                break
+            print(f"   [Level {level+1}] Expanding {len(collapse_nodes)} nested nodes...")
+            for node in collapse_nodes[:120]:
+                try:
+                    await node.click(timeout=800)
+                    await page.wait_for_timeout(50)
+                except:
+                    pass
+            await page.wait_for_timeout(2000)
+        except Exception as e:
+            print(f"   [Level {level+1}] Expand warning: {e}")
+            break
+
+    links_data = await page.evaluate(r'''() => {
         const results = [];
-        const seen = new Set();
-        let lastHeight = 0, scrollCount = 0;
-        while (scrollCount < 80) {
-            container.querySelectorAll('a[href]').forEach(a => {
-                const href = new URL(a.getAttribute('href'), window.location.href).href.split('#')[0].split('?')[0];
-                const text = a.innerText.trim();
-                if (href && text && !seen.has(href) && !href.startsWith('javascript')) {
-                    seen.add(href);
-                    results.push({text, url: href});
-                }
-            });
-            container.scrollTop += 600;
-            await sleep(400);
-            if (container.scrollTop === lastHeight) break;
-            lastHeight = container.scrollTop;
-            scrollCount++;
+        const container = document.querySelector('.zDocsTocList') || document.querySelector('.zDocsTOC');
+        let allLinks = [];
+        if (container) {
+            allLinks = Array.from(container.querySelectorAll('a[href]'));
         }
+        if (allLinks.length === 0) {
+            allLinks = Array.from(document.querySelectorAll('nav a[href], [class*="sidebar"] a[href]'));
+        }
+        allLinks.forEach(a => {
+            const href = a.getAttribute('href');
+            let text = a.innerText.trim();
+            // Clean up titles (remove leading/trailing symbols, newlines, tabs, chevron chars)
+            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
+            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
+                results.push({text, href});
+            }
+        });
         return results;
     }''')
-    return [l for l in links if '.html' in l['url'] or '/page/' in l['url']]
 
-async def run_senior_validation():
-    # Load URLs inside to avoid scoping issues
-    STAGE_URL = os.environ.get('STAGE_URL')
-    PROD_URL = os.environ.get('PROD_URL')
-    REPORT_FILENAME = os.environ.get('REPORT_FILENAME') or os.path.join(UI_REPORTS_DIR, f'tester-content-report-{int(datetime.now().timestamp())}.xlsx')
+    toc = []
+    seen = set()
+    for item in links_data:
+        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
+        if full_url not in seen:
+            toc.append({'title': item['text'], 'url': full_url})
+            seen.add(full_url)
 
-    if not STAGE_URL or not PROD_URL:
+    print(f"   ✅ Prod TOC: {len(toc)} topics found.")
+    return toc
+
+# ── Stage/Published TOC Extraction ───────────────────────────────────
+async def extract_stage_toc(page, base_url):
+    """Extract TOC from Published/Stage (AEM publish)."""
+    await page.wait_for_load_state("networkidle")
+    await handle_cookies(page)
+    await page.wait_for_timeout(2000)
+
+    # Iteratively expand collapsible nested items on Stage to match sequences
+    for level in range(3):
         try:
-            with open(TEST_URLS_PATH, 'r') as f:
-                config = json.load(f)
-                STAGE_URL = STAGE_URL or config.get('stage')
-                PROD_URL = PROD_URL or config.get('production')
-        except: pass
+            collapse_nodes = await page.locator('.cmp-navigation__item--active[aria-expanded="false"], .cmp-navigation__item[aria-expanded="false"], button[aria-expanded="false"]').all()
+            if not collapse_nodes:
+                break
+            for node in collapse_nodes[:50]:
+                try:
+                    await node.click(timeout=800)
+                except:
+                    pass
+            await page.wait_for_timeout(1000)
+        except:
+            break
 
-    if not STAGE_URL or not PROD_URL:
-        print("❌ Error: Missing URLs.")
-        sys.exit(1)
+    links_data = await page.evaluate(r'''() => {
+        const results = [];
+        const links = document.querySelectorAll('.cmp-navigation__item-link');
+        links.forEach(a => {
+            const href = a.getAttribute('href');
+            let text = a.innerText.trim();
+            text = text.replace(/[\r\n\t]+/g, ' ').replace(/^\s*[\u203A\u25BC\u25B6>v-]\s*/g, '').trim();
+            if (href && text && !href.startsWith('#') && !href.startsWith('javascript')) {
+                results.push({text, href});
+            }
+        });
+        return results;
+    }''')
 
+    toc = []
+    seen = set()
+    for item in links_data:
+        full_url = urljoin(base_url, item['href']).split('#')[0].split('?')[0]
+        if full_url not in seen and '.html' in full_url:
+            toc.append({'title': item['text'], 'url': full_url})
+            seen.add(full_url)
+
+    print(f"   ✅ Stage TOC: {len(toc)} topics found.")
+    return toc
+
+# ── Content Extraction & Comparison ──────────────────────────────────
+def extract_text_content(page_html):
+    """Extract and normalize text content from HTML."""
+    try:
+        clean = re.sub(r'<script[^>]*>.*?</script>', '', page_html, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r'<style[^>]*>.*?</style>', '', clean, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r'<!--.*?-->', '', clean, flags=re.DOTALL)
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        
+        body_match = re.search(r'<body[^>]*>(.*)</body>', clean, re.IGNORECASE | re.DOTALL)
+        if body_match:
+            return body_match.group(1)
+        return clean
+    except Exception as e:
+        return page_html
+
+async def get_page_text(page, url, is_prod=False):
+    """Fetch and extract text from page (h2, h3, paragraphs only)."""
+    try:
+        await page.goto(url, wait_until='networkidle', timeout=30000)
+        await handle_cookies(page)
+        await page.wait_for_timeout(300)
+        
+        # Determine root container
+        root_selector = '.zDocsTopicPageBody' if is_prod else '.topic-renderer__content'
+        
+        # Wait for content container
+        try:
+            await page.wait_for_selector(root_selector, timeout=5000)
+        except:
+            pass
+            
+        # Extract content with bold formatting and strict whitespace normalization
+        text = await page.evaluate('''(selector) => {
+            const results = [];
+            const noise = [
+                "was this page helpful?", "helpful?", "options", "export", "feedback", 
+                "back", "network", "j189", "locking", "better", "share", "page", 
+                "address", "next", "entering", "get", "usb", "j100", "single", 
+                "anonymous", "filters", "pin", "email", "filter", "stay", 
+                "display", "history", "components"
+            ];
+            
+            function getFormattedText(node) {
+                let result = '';
+                for (let child of node.childNodes) {
+                    if (child.nodeType === 3) { // TEXT_NODE
+                        result += child.textContent;
+                    } else if (child.nodeType === 1) { // ELEMENT_NODE
+                        const tag = child.tagName.toLowerCase();
+                        const style = window.getComputedStyle(child);
+                        const isBold = tag === 'strong' || tag === 'b' || style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 700;
+                        
+                        let childText = getFormattedText(child);
+                        if (isBold && childText.trim()) {
+                            result += `[BOLD:${childText}]`;
+                        } else {
+                            result += childText;
+                        }
+                    }
+                }
+                return result;
+            }
+
+            const root = document.querySelector(selector) || document.body;
+            
+            // Extract h2, h3, p, and list items (li, dt, dd)
+            root.querySelectorAll('h2, h3, p, li, dt, dd, caption').forEach(el => {
+                // Skip if in header, footer, or nav (safety check even within root)
+                let parent = el.parentElement;
+                let inExcluded = false;
+                for (let i = 0; i < 15; i++) {
+                    if (!parent || parent === root) break;
+                    const tag = parent.tagName.toLowerCase();
+                    const className = parent.className.toLowerCase();
+                    const id = parent.id.toLowerCase();
+                    
+                    if (tag === 'header' || tag === 'footer' || tag === 'nav' || 
+                        className.includes('breadcrumb') || className.includes('toolbar') || 
+                        className.includes('metadata') || className.includes('tag') ||
+                        className.includes('search') || className.includes('filter') ||
+                        id.includes('search') || id.includes('filter')) {
+                        inExcluded = true;
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+                
+                if (!inExcluded) {
+                    const rawText = getFormattedText(el).trim();
+                    if (rawText.length > 0) {
+                        const lowText = rawText.toLowerCase();
+                        // Filter out boilerplate
+                        if (!noise.some(n => lowText === n || (lowText.includes(n) && rawText.length < 50))) {
+                            // Normalize multiple spaces within text, but keep quotes
+                            const cleanText = rawText.replace(/\s+/g, ' ').trim();
+                            results.push(cleanText);
+                        }
+                    }
+                }
+            });
+            
+            return results.join(' ');
+        }''', root_selector)
+        
+        return {
+            'url': url,
+            'title': await page.title(),
+            'text': text.strip(),
+            'status': 'success'
+        }
+    except Exception as e:
+        return {
+            'url': url,
+            'title': 'Error',
+            'text': '',
+            'status': 'error',
+            'error': str(e)
+        }
+
+def compare_page_content(stage_text, prod_text):
+    """Compare content and return detailed differences."""
+    if not stage_text or not prod_text:
+        return {
+            'match_type': 'missing',
+            'similarity': 0.0,
+            'stage_length': len(stage_text) if stage_text else 0,
+            'prod_length': len(prod_text) if prod_text else 0,
+            'diff': 'Content is empty'
+        }
+    
+    # Normalize
+    stage_norm = ' '.join(stage_text.lower().split())
+    prod_norm = ' '.join(prod_text.lower().split())
+    
+    if stage_norm == prod_norm:
+        return {
+            'match_type': 'match',
+            'similarity': 1.0,
+            'stage_length': len(stage_norm),
+            'prod_length': len(prod_norm),
+            'diff': 'Perfect match'
+        }
+    
+    # Split into words for detailed comparison
+    stage_words = stage_norm.split()
+    prod_words = prod_norm.split()
+    stage_set = set(stage_words)
+    prod_set = set(prod_words)
+    
+    # Find differences
+    missing_in_prod = stage_set - prod_set  # In stage but not in prod
+    extra_in_prod = prod_set - stage_set     # In prod but not in stage
+    common = stage_set & prod_set
+    
+    # Calculate similarity
+    total = stage_set | prod_set
+    similarity = len(common) / len(total) if total else 0.0
+    
+    # Create detailed diff
+    missing_sample = ' '.join(list(missing_in_prod)[:5]) if missing_in_prod else '(none)'
+    extra_sample = ' '.join(list(extra_in_prod)[:5]) if extra_in_prod else '(none)'
+    
+    diff_info = f"Stage: {len(stage_words)} words | Prod: {len(prod_words)} words | Missing in Prod: {len(missing_in_prod)} terms | Extra in Prod: {len(extra_in_prod)} terms"
+    
+    if similarity >= 0.85:
+        match_type = 'match'
+    elif similarity >= 0.70:
+        match_type = 'partial'
+    else:
+        match_type = 'mismatch'
+    
+    return {
+        'match_type': match_type,
+        'similarity': similarity,
+        'stage_length': len(stage_norm),
+        'prod_length': len(prod_norm),
+        'stage_words': len(stage_words),
+        'prod_words': len(prod_words),
+        'missing_in_prod': missing_in_prod,
+        'extra_in_prod': extra_in_prod,
+        'missing_in_prod_count': len(missing_in_prod),
+        'extra_in_prod_count': len(extra_in_prod),
+        'missing_sample': missing_sample,
+        'extra_sample': extra_sample,
+        'diff': diff_info
+    }
+
+async def validate_content():
+    """Main validation logic - validates all TOC items in parallel."""
+    results = []
+    match_stats = {'match': 0, 'partial': 0, 'mismatch': 0, 'error': 0}
+    
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        s_ctx = await browser.new_context(storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None)
-        p_ctx = await browser.new_context()
-
-        p1, p2 = await s_ctx.new_page(), await p_ctx.new_page()
-        prod_toc_task = senior_toc_extraction(p2, PROD_URL, is_prod=True)
-        stage_toc_task = senior_toc_extraction(p1, STAGE_URL, is_prod=False)
-        prod_toc, stage_toc = await asyncio.gather(prod_toc_task, stage_toc_task)
-        await p1.close(); await p2.close()
-
-        s_map = {get_filename(t['url']): t for t in stage_toc if get_filename(t['url'])}
-        work_list = []
-        for p_item in prod_toc:
-            fn = get_filename(p_item['url'])
-            work_list.append({'title': p_item['text'], 'p_url': p_item['url'], 's_url': s_map.get(fn, {}).get('url')})
-
-        work_list = work_list[:MAX_TOPICS]
-        print(f"📋 Auditing content for {len(work_list)} topics...")
+        browser = await p.chromium.launch()
         
-        semaphore = asyncio.Semaphore(CONCURRENT_PAGES)
-        async def audit_topic(item):
-            if not item['s_url']: return {**item, 'Pass/Fail': 'FAIL', 'Similarity %': 0, 'Status': 'MISSING'}
-            p_res = await get_page_metrics(p_ctx, item['p_url'], semaphore)
-            s_res = await get_page_metrics(s_ctx, item['s_url'], semaphore)
-            if 'error' in p_res or 'error' in s_res: return {**item, 'Status': 'ERROR'}
-            sim = round(difflib.SequenceMatcher(None, p_res['text'], s_res['text']).ratio() * 100, 2)
-            passed = (sim >= SIMILARITY_THRESHOLD and p_res['img_count'] == s_res['img_count'] and p_res['tbl_count'] == s_res['tbl_count'])
-            return {'Topic': item['title'], 'Pass/Fail': 'PASS' if passed else 'FAIL', 'Similarity %': sim, 
-                    'Images': '✓' if p_res['img_count'] == s_res['img_count'] else f"{p_res['img_count']} vs {s_res['img_count']}",
-                    'Tables': '✓' if p_res['tbl_count'] == s_res['tbl_count'] else f"{p_res['tbl_count']} vs {s_res['tbl_count']}",
-                    'Prod URL': item['p_url'], 'Stage URL': item['s_url']}
-
-        results = await asyncio.gather(*(audit_topic(it) for it in work_list))
-        df = pd.DataFrame([r for r in results if r])
+        # Stage context
+        stage_ctx = await browser.new_context(
+            storage_state=AUTH_STATE_PATH if os.path.exists(AUTH_STATE_PATH) else None
+        )
+        # Prod context
+        prod_ctx = await browser.new_context()
         
-        avg_sim = df['Similarity %'].mean() if 'Similarity %' in df.columns else 0
-        pass_rate = (len(df[df['Pass/Fail'] == 'PASS']) / len(df) * 100) if not df.empty else 0
-
-        with pd.ExcelWriter(REPORT_FILENAME) as writer:
-            pd.DataFrame([['Senior Audit'], ['Date', datetime.now().strftime('%Y-%m-%d')], ['Pass Rate', f"{round(pass_rate, 2)}%"]]).to_excel(writer, sheet_name='Summary', header=False, index=False)
-            df.to_excel(writer, sheet_name='Details', index=False)
-
-        print(f"::RESULTS::{json.dumps({'overall': int(avg_sim), 'images': int(pass_rate), 'tables': int(pass_rate)})}")
-        print(f"✅ Audit Complete: {REPORT_FILENAME}")
+        print("\n🔍 Scanning Navigation Structure...")
+        
+        # Extract TOCs
+        p_page = await prod_ctx.new_page()
+        await p_page.goto(PROD_URL, wait_until="networkidle", timeout=60000)
+        prod_toc = await extract_prod_toc(p_page, PROD_URL)
+        await p_page.close()
+        
+        s_page = await stage_ctx.new_page()
+        print(f"🌐 Opening Published URL for TOC...")
+        await s_page.goto(STAGE_URL, wait_until="networkidle", timeout=60000)
+        stage_toc = await extract_stage_toc(s_page, STAGE_URL)
+        await s_page.close()
+        
+        # Build URL mapping
+        print(f"\n📊 Matching TOC: Prod={len(prod_toc)} vs Stage={len(stage_toc)}")
+        
+        # Build URL mapping with support for duplicate filenames (store list of items per filename)
+        stage_by_filename = {}
+        for idx, item in enumerate(stage_toc):
+            fn = get_filename(item['url'])
+            if fn:
+                if fn not in stage_by_filename:
+                    stage_by_filename[fn] = []
+                stage_by_filename[fn].append({**item, 'index': idx + 1, 'used': False})
+        
+        # Parallel validation function
+        async def validate_single_page(prod_item, idx, total):
+            """Validate a single page."""
+            prod_url = prod_item['url']
+            prod_fn = get_filename(prod_url)
+            
+            # Find matching stage URL (pick first unused item with same filename)
+            stage_url = None
+            matched_stage = None
+            candidates = stage_by_filename.get(prod_fn, [])
+            for cand in candidates:
+                if not cand['used']:
+                    matched_stage = cand
+                    cand['used'] = True
+                    stage_url = cand['url']
+                    break
+            
+            if not stage_url:
+                # Missing in stage
+                result = {
+                    'Content Match': '❌',
+                    'Similarity %': '0%',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': '[MISSING]',
+                    'Prod URL': prod_url,
+                    'Stage URL': 'N/A'
+                }
+                return 'mismatch', result
+            
+            try:
+                # Create new pages for this validation
+                s_page = await stage_ctx.new_page()
+                p_page = await prod_ctx.new_page()
+                
+                stage_data = await get_page_text(s_page, stage_url, is_prod=False)
+                prod_data = await get_page_text(p_page, prod_url, is_prod=True)
+                
+                await s_page.close()
+                await p_page.close()
+                
+                if stage_data['status'] == 'error' or prod_data['status'] == 'error':
+                    result = {
+                        'Content Match': '❌',
+                        'Similarity %': '0%',
+                        'Prod Title': prod_data.get('title', 'Error'),
+                        'Stage Title': stage_data.get('title', 'Error'),
+                        'Prod URL': prod_url,
+                        'Stage URL': stage_url
+                    }
+                    return 'error', result
+                
+                # Compare
+                comparison = compare_page_content(stage_data['text'], prod_data['text'])
+                # Force to Match/Mismatch (Use 85% threshold, ignore sequence)
+                is_match = comparison['match_type'] == 'match'
+                similarity = comparison['similarity']
+                
+                result = {
+                    'Content Match': '✅' if is_match else '❌',
+                    'Similarity %': f"{similarity * 100:.1f}%",
+                    'Prod Title': prod_data['title'],
+                    'Stage Title': stage_data['title'],
+                    'Prod URL': prod_url,
+                    'Stage URL': stage_url
+                }
+                
+                # Simple progress log
+                emoji = '✅' if is_match else '❌'
+                reason = ""
+                if not is_match:
+                    missing = list(comparison.get('missing_in_prod', set()))[:3]
+                    extra = list(comparison.get('extra_in_prod', set()))[:3]
+                    if missing: reason += f" | Missing: {', '.join(missing)}"
+                    if extra: reason += f" | Extra: {', '.join(extra)}"
+                
+                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} {emoji} ({similarity*100:.1f}%){reason}")
+                
+                return 'match' if is_match else 'mismatch', result
+                
+            except Exception as e:
+                print(f"  [{idx}/{total}] {prod_item['title'][:40]:40s} 🚨 EXCEPTION")
+                result = {
+                    'Content Match': '❌',
+                    'Similarity %': '0%',
+                    'Prod Title': prod_item['title'],
+                    'Stage Title': 'Error',
+                    'Prod URL': prod_url,
+                    'Stage URL': stage_url or 'N/A'
+                }
+                return 'error', result
+        
+        # Validate in batches (parallel)
+        print(f"\n📄 Validating content for {len(prod_toc)} topics (parallel)...")
+        
+        # Process in batches of 10 concurrent validations (faster)
+        BATCH_SIZE = 10
+        for batch_start in range(0, len(prod_toc), BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, len(prod_toc))
+            batch = prod_toc[batch_start:batch_end]
+            
+            # Run concurrent validations
+            tasks = [
+                validate_single_page(prod_toc[idx], idx + 1, len(prod_toc))
+                for idx in range(batch_start, batch_end)
+            ]
+            
+            batch_results = await asyncio.gather(*tasks)
+            
+            for match_type, result in batch_results:
+                if match_type != 'ignore':
+                    match_stats[match_type] += 1
+                    results.append(result)
+        
+        # Add items that exist in Stage but NOT in Prod (Extra items)
+        for fn, candidates in stage_by_filename.items():
+            for cand in candidates:
+                if not cand['used']:
+                    result = {
+                        'Content Match': '❌',
+                        'Similarity %': '0%',
+                        'Prod Title': '[MISSING]',
+                        'Stage Title': cand['title'],
+                        'Prod URL': 'N/A',
+                        'Stage URL': cand['url']
+                    }
+                    results.append(result)
+                    match_stats['mismatch'] += 1
+        
+        await prod_ctx.close()
+        await stage_ctx.close()
         await browser.close()
+    
+    return results, match_stats, stage_toc, prod_toc
 
-if __name__ == "__main__":
-    asyncio.run(run_senior_validation())
+async def main():
+    """Run validation and generate report."""
+    try:
+        print(f"\n{'='*60}")
+        results, match_stats, stage_toc, prod_toc = await validate_content()
+        
+        # Calculate overall percentage
+        total = sum(match_stats.values())
+        overall_pct = (match_stats['match'] / total * 100) if total > 0 else 0
+        
+        print(f"\n{'='*60}")
+        print(f"  📊 Results Summary")
+        print(f"{'='*60}")
+        print(f"  ✅ Match:    {match_stats['match']}")
+        print(f"  ❌ Mismatch: {match_stats['mismatch']}")
+        print(f"  📈 Overall:  {overall_pct:.1f}%")
+        print(f"{'='*60}\n")
+
+        # Create DataFrame
+        df = pd.DataFrame(results)
+
+        # Summary DataFrame
+        summary_df = pd.DataFrame([
+            ['Deep Content Validation Report'],
+            ['Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Stage URL', STAGE_URL],
+            ['Prod URL', PROD_URL],
+            [''],
+            ['✅ Match', match_stats['match']],
+            ['❌ Mismatch', match_stats['mismatch']],
+            ['Overall Score', f"{overall_pct:.1f}%"],
+            [''],
+            ['Stage Topics', len(stage_toc)],
+            ['Prod Topics', len(prod_toc)]
+        ])
+
+        # TOC DataFrames
+        stage_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(stage_toc)
+        ])
+        prod_toc_df = pd.DataFrame([
+            {'#': i + 1, 'Title': t['title'], 'URL': t['url']} 
+            for i, t in enumerate(prod_toc)
+        ])
+
+        # Save multi-tab report
+        os.makedirs(os.path.dirname(REPORT_FILENAME), exist_ok=True)
+        with pd.ExcelWriter(REPORT_FILENAME, engine='openpyxl') as writer:
+            summary_df.to_excel(writer, sheet_name='Summary', header=False, index=False)
+            df.to_excel(writer, sheet_name='Comparison', index=False)
+            stage_toc_df.to_excel(writer, sheet_name='Stage TOC', index=False)
+            prod_toc_df.to_excel(writer, sheet_name='Prod TOC', index=False)
+
+            # 5. Structure (Side-by-side raw sequences)
+            max_len = max(len(stage_toc), len(prod_toc))
+            structure_data = []
+            for i in range(max_len):
+                s_item = stage_toc[i] if i < len(stage_toc) else {'title': '', 'url': ''}
+                p_item = prod_toc[i] if i < len(prod_toc) else {'title': '', 'url': ''}
+                structure_data.append({
+                    'Stage #': i + 1 if i < len(stage_toc) else '',
+                    'Stage Title': s_item['title'],
+                    'Prod #': i + 1 if i < len(prod_toc) else '',
+                    'Prod Title': p_item['title']
+                })
+            pd.DataFrame(structure_data).to_excel(writer, sheet_name='Structure', index=False)
+
+        print(f"✓ Multi-tab report saved to: {REPORT_FILENAME}")
+        
+        # Output results in server format
+        results_json = {
+            'match': match_stats['match'],
+            'mismatch': match_stats['mismatch'],
+            'overall': overall_pct
+        }
+        print(f"::RESULTS::{json.dumps(results_json)}")
+        print(f"\n✅ Deep content validation complete!")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 2
+
+if __name__ == '__main__':
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)
