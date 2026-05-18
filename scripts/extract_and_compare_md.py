@@ -179,7 +179,9 @@ async def extract_topic_markdown(page, url, is_prod=False):
             function walk(node) {
                 let text = '';
                 if (node.nodeType === 3) { // TEXT_NODE
-                    text += node.textContent;
+                    let val = node.textContent;
+                    val = val.replace(/[\\r\\n\\t]+/g, ' ').replace(/ {2,}/g, ' ');
+                    text += val;
                 } else if (node.nodeType === 1) { // ELEMENT_NODE
                     const tag = node.tagName.toLowerCase();
                     const className = node.className ? node.className.toLowerCase() : '';
@@ -267,7 +269,21 @@ async def extract_topic_markdown(page, url, is_prod=False):
             }
 
             // Post-processing to normalize markdown spacing
-            return markdown.replace(/\\n{3,}/g, '\\n\\n').trim();
+            let cleaned = markdown.replace(/\\n{3,}/g, '\\n\\n').trim();
+            
+            // Normalize spaces line-by-line while preserving Markdown syntax prefixes
+            let lines = cleaned.split('\\n');
+            lines = lines.map(line => {
+                let trimmed = line.trim();
+                if (trimmed.startsWith('- ') || trimmed.startsWith('#') || trimmed.startsWith('* ')) {
+                    const prefixMatch = trimmed.match(/^([\\-#\\*]+\\s*)/);
+                    const prefix = prefixMatch ? prefixMatch[0] : '';
+                    const content = trimmed.substring(prefix.length).trim().replace(/\\s+/g, ' ');
+                    return prefix + content;
+                }
+                return trimmed.replace(/\\s+/g, ' ');
+            });
+            return lines.join('\\n');
         }''', root_selector)
         
         return md_content

@@ -236,7 +236,9 @@ async def fetch_single_attempt(page, url, is_prod=False):
             function walk(node) {
                 let text = '';
                 if (node.nodeType === 3) {
-                    text += node.textContent;
+                    let val = node.textContent;
+                    val = val.replace(/[\\r\\n\\t]+/g, ' ').replace(/ {2,}/g, ' ');
+                    text += val;
                 } else if (node.nodeType === 1) {
                     const tag = node.tagName.toLowerCase();
                     
@@ -324,7 +326,34 @@ async def fetch_single_attempt(page, url, is_prod=False):
                 });
             }
 
-            return markdown.replace(/\\n{3,}/g, '\\n\\n').trim();
+            // Clean up multi-newlines
+            let cleaned = markdown.replace(/\\n{3,}/g, '\\n\\n').trim();
+            
+            // Normalize spaces line-by-line while preserving Markdown syntax prefixes
+            let lines = cleaned.split('\\n');
+            lines = lines.map(line => {
+                let trimmed = line.trim();
+                let prefix = '';
+                if (trimmed.startsWith('- ')) {
+                    prefix = '- ';
+                } else if (trimmed.startsWith('* ')) {
+                    prefix = '* ';
+                } else if (trimmed.startsWith('#')) {
+                    let i = 0;
+                    while (i < trimmed.length && trimmed[i] === '#') {
+                        i++;
+                    }
+                    while (i < trimmed.length && trimmed[i] === ' ') {
+                        i++;
+                    }
+                    prefix = trimmed.substring(0, i);
+                }
+                
+                let content = trimmed.substring(prefix.length).trim();
+                content = content.replace(/[\\s\\r\\n\\t]+/g, ' ');
+                return prefix + content;
+            });
+            return lines.join('\\n');
         }''', root_selector)
         
         return md_content
